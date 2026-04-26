@@ -25,7 +25,9 @@ export async function findProductByBarcode(barcode) {
         stock_actual,
         categoria,
         barcode,
-        barcode_normalized
+        barcode_normalized,
+        tiene_imagen,
+        imagen
       FROM ${tableName}
       WHERE barcode_normalized = ? OR barcode = ?
       LIMIT 1
@@ -49,7 +51,9 @@ export async function listProducts({ limit }) {
         stock_actual,
         categoria,
         barcode,
-        barcode_normalized
+        barcode_normalized,
+        tiene_imagen,
+        imagen
       FROM ${tableName}
       ORDER BY id ASC
       LIMIT ?
