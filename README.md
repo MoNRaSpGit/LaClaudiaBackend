@@ -12,6 +12,7 @@ API Node + Express + MySQL para el flujo de scanner.
 
 - MVC modular por feature en `src/modules`.
 - Ver detalle en `docs/architecture.md`.
+- Estado de trabajo y avances: `docs/bitacora.md`.
 
 ## Endpoints
 
