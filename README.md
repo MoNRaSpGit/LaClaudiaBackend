@@ -1,23 +1,40 @@
 ﻿# LaClaudia Backend
 
-Backend base con Node + Express, listo para Render.
+API Node + Express + MySQL para el flujo de scanner.
 
 ## Scripts
 
-- `npm run dev`: desarrollo con watch.
-- `npm start`: produccion.
+- `npm run dev`
+- `npm start`
+- `npm run db:prepare:scanner`
 
-## Variables de entorno
+## Arquitectura
 
-- `PORT=4000`
-- `FRONTEND_URL=http://localhost:5173`
-
-Para varios orígenes permitidos por CORS:
-
-`FRONTEND_URL=https://tu-user.github.io,https://www.tudominio.com`
+- MVC modular por feature en `src/modules`.
+- Ver detalle en `docs/architecture.md`.
 
 ## Endpoints
 
 - `GET /api`
 - `GET /api/health`
 - `GET /api/message`
+- `GET /api/scanner/products?limit=5`
+- `GET /api/scanner/products/lookup?barcode=...`
+
+## Variables de entorno
+
+- `PORT=4000`
+- `FRONTEND_URL=http://localhost:5173,https://monraspgit.github.io`
+- `DB_HOST=...`
+- `DB_PORT=20996`
+- `DB_USER=...`
+- `DB_PASSWORD=...`
+- `DB_NAME=bwbxqngh9d4wr6bnopb3`
+- `DB_SSL=false`
+- `PRODUCTS_TABLE=clau_prodcutos`
+
+## Render
+
+- Build Command: `npm install`
+- Start Command: `npm start`
+- Root Directory: vacio

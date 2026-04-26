@@ -2,7 +2,6 @@
   - type: web
     name: laclaudia-backend
     env: node
-    rootDir: backend
     plan: free
     buildCommand: npm install
     startCommand: npm start
