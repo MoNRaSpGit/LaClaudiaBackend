@@ -64,6 +64,64 @@ export async function listProducts({ limit }) {
   return rows;
 }
 
+export async function findProductById(productId) {
+  const pool = getDbPoolOrThrow();
+  const tableName = escapeId(env.productsTable);
+
+  const [rows] = await pool.query(
+    `
+      SELECT
+        id,
+        nombre,
+        precio_venta,
+        stock_actual,
+        categoria,
+        barcode,
+        barcode_normalized,
+        tiene_imagen,
+        imagen
+      FROM ${tableName}
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [productId]
+  );
+
+  return rows[0] || null;
+}
+
+export async function updateProductById(productId, payload) {
+  const pool = getDbPoolOrThrow();
+  const tableName = escapeId(env.productsTable);
+
+  const updates = [
+    'nombre = ?',
+    'precio_venta = ?'
+  ];
+  const params = [payload.nombre, payload.precio_venta];
+
+  if (payload.imagen !== undefined) {
+    updates.push('imagen = ?');
+    params.push(payload.imagen);
+    updates.push('tiene_imagen = ?');
+    params.push(payload.imagen ? 1 : 0);
+  }
+
+  params.push(productId);
+
+  const [result] = await pool.query(
+    `
+      UPDATE ${tableName}
+      SET ${updates.join(', ')}
+      WHERE id = ?
+      LIMIT 1
+    `,
+    params
+  );
+
+  return Number(result?.affectedRows || 0);
+}
+
 function buildItemsInsertStatement(items) {
   const placeholders = items.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
   const values = items.flatMap((item) => ([

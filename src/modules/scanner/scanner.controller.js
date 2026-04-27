@@ -3,7 +3,8 @@ import {
   getScannerProducts,
   lookupProductByBarcode,
   registerScannerPayment,
-  registerScannerSale
+  registerScannerSale,
+  updateScannerProduct
 } from './scanner.service.js';
 import {
   addDashboardSubscriber,
@@ -32,6 +33,18 @@ export async function scannerListController(req, res, next) {
     res.json({
       ok: true,
       ...data
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerUpdateProductController(req, res, next) {
+  try {
+    const item = await updateScannerProduct(req.params.id, req.body || {});
+    res.json({
+      ok: true,
+      item
     });
   } catch (error) {
     next(error);

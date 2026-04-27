@@ -38,6 +38,37 @@ function normalizeMoney(value) {
   return Number(parsed.toFixed(2));
 }
 
+function normalizeRequiredInteger(value) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
+}
+
+function normalizeOptionalImageSource(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized.startsWith('data:image') || normalized.startsWith('http://') || normalized.startsWith('https://')) {
+    return normalized;
+  }
+
+  const error = new Error('thumbnail_url invalida');
+  error.statusCode = 400;
+  throw error;
+}
+
 function normalizeQuantity(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -189,5 +220,38 @@ export function normalizeDashboardParams(rawQuery) {
     profitRate: normalizeFloatRange(query.profitRate, 0.2, 0, 1),
     movementLimit: normalizeIntegerRange(query.movementLimit, 100, 1, 500),
     rankingLimit: normalizeIntegerRange(query.rankingLimit, 20, 1, 100)
+  };
+}
+
+export function normalizeProductUpdatePayload(rawProductId, rawPayload) {
+  const productId = normalizeRequiredInteger(rawProductId);
+  if (productId === null) {
+    const error = new Error('productId invalido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const payload = rawPayload || {};
+  const nombre = String(payload.nombre || '').trim();
+  const precioVenta = normalizeMoney(payload.precio_venta);
+  const thumbnailUrl = normalizeOptionalImageSource(payload.thumbnail_url);
+
+  if (!nombre) {
+    const error = new Error('nombre requerido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (precioVenta === null) {
+    const error = new Error('precio_venta invalido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    productId,
+    nombre,
+    precio_venta: precioVenta,
+    thumbnail_url: thumbnailUrl
   };
 }

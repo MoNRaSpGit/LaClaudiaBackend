@@ -1,6 +1,7 @@
 import {
   createCashPayment,
   createSaleTicket,
+  findProductById,
   findProductByBarcode,
   getBestSalesDayTotal,
   listPaymentMovementsBetween,
@@ -9,13 +10,15 @@ import {
   listSaleItemsBySaleIds,
   listSalesMovementsBetween,
   sumConfirmedPaymentsBetween,
-  sumConfirmedSalesBetween
+  sumConfirmedSalesBetween,
+  updateProductById
 } from './scanner.repository.js';
 import {
   normalizeBarcode,
   normalizeDashboardParams,
   normalizeLimit,
   normalizePaymentPayload,
+  normalizeProductUpdatePayload,
   normalizeSalePayload
 } from './scanner.model.js';
 
@@ -58,6 +61,41 @@ function toScannerProduct(product) {
 
 function roundMoney(value) {
   return Number(Number(value || 0).toFixed(2));
+}
+
+function decodeImagePayload(rawThumbnailUrl) {
+  if (rawThumbnailUrl === undefined) {
+    return undefined;
+  }
+
+  if (rawThumbnailUrl === null) {
+    return null;
+  }
+
+  const value = String(rawThumbnailUrl || '').trim();
+  if (!value) {
+    return null;
+  }
+
+  if (value.startsWith('data:image')) {
+    const commaIndex = value.indexOf(',');
+    if (commaIndex === -1) {
+      const error = new Error('Formato de imagen invalido');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const base64 = value.slice(commaIndex + 1);
+    try {
+      return Buffer.from(base64, 'base64');
+    } catch (_error) {
+      const error = new Error('No se pudo decodificar imagen base64');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  return value;
 }
 
 function toCanonicalIsoUtc(rawValue) {
@@ -204,6 +242,27 @@ export async function getScannerProducts(rawLimit) {
     count: items.length,
     items: items.map(toScannerProduct)
   };
+}
+
+export async function updateScannerProduct(rawProductId, rawPayload) {
+  const normalized = normalizeProductUpdatePayload(rawProductId, rawPayload);
+  const existing = await findProductById(normalized.productId);
+
+  if (!existing) {
+    const error = new Error('Producto no encontrado');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const imagen = decodeImagePayload(normalized.thumbnail_url);
+  await updateProductById(normalized.productId, {
+    nombre: normalized.nombre,
+    precio_venta: normalized.precio_venta,
+    imagen
+  });
+
+  const updated = await findProductById(normalized.productId);
+  return toScannerProduct(updated);
 }
 
 export async function registerScannerSale(rawPayload) {

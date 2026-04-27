@@ -5,6 +5,7 @@ export const ROLES = Object.freeze({
 
 export const PERMISSIONS = Object.freeze({
   SCANNER_PRODUCTS_READ: 'scanner.products.read',
+  SCANNER_PRODUCT_UPDATE: 'scanner.product.update',
   SCANNER_LOOKUP_READ: 'scanner.lookup.read',
   SCANNER_SALE_CREATE: 'scanner.sale.create',
   SCANNER_DASHBOARD_READ: 'scanner.dashboard.read',
@@ -14,6 +15,7 @@ export const PERMISSIONS = Object.freeze({
 export const ROLE_PERMISSIONS = Object.freeze({
   [ROLES.ADMIN]: new Set([
     PERMISSIONS.SCANNER_PRODUCTS_READ,
+    PERMISSIONS.SCANNER_PRODUCT_UPDATE,
     PERMISSIONS.SCANNER_LOOKUP_READ,
     PERMISSIONS.SCANNER_SALE_CREATE,
     PERMISSIONS.SCANNER_DASHBOARD_READ,
@@ -21,6 +23,7 @@ export const ROLE_PERMISSIONS = Object.freeze({
   ]),
   [ROLES.OPERARIO]: new Set([
     PERMISSIONS.SCANNER_PRODUCTS_READ,
+    PERMISSIONS.SCANNER_PRODUCT_UPDATE,
     PERMISSIONS.SCANNER_LOOKUP_READ,
     PERMISSIONS.SCANNER_SALE_CREATE
   ])
@@ -41,4 +44,3 @@ export function roleHasPermission(role, permission) {
 
   return allowedPermissions.has(normalizedPermission);
 }
-
