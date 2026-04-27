@@ -78,21 +78,8 @@ function decodeImagePayload(rawThumbnailUrl) {
   }
 
   if (value.startsWith('data:image')) {
-    const commaIndex = value.indexOf(',');
-    if (commaIndex === -1) {
-      const error = new Error('Formato de imagen invalido');
-      error.statusCode = 400;
-      throw error;
-    }
-
-    const base64 = value.slice(commaIndex + 1);
-    try {
-      return Buffer.from(base64, 'base64');
-    } catch (_error) {
-      const error = new Error('No se pudo decodificar imagen base64');
-      error.statusCode = 400;
-      throw error;
-    }
+    // Persist as data URL string to stay compatible with TEXT/VARCHAR columns in catalog table.
+    return value;
   }
 
   return value;
