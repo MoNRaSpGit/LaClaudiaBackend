@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "db:prepare:scanner": "node src/scripts/ensureScannerIndexes.js"
+    "db:prepare:scanner": "node src/scripts/ensureScannerIndexes.js",
+    "db:prepare:core": "node src/scripts/ensureCoreSchema.js",
+    "db:prepare:all": "npm run db:prepare:scanner && npm run db:prepare:core",
+    "auth:hash-password": "node src/scripts/hashPassword.js",
+    "auth:cleanup-sessions": "node src/scripts/cleanupExpiredSessions.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

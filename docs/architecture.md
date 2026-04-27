@@ -16,7 +16,25 @@
 ## Modulos actuales
 
 - `health`: salud de API y DB.
-- `scanner`: busqueda por barcode y listado inicial de productos.
+- `auth`: login por usuario/clave (fase inicial).
+- `scanner`: lookup/listado de productos + confirmacion de venta.
+- `scanner.stream`: capa de stream en tiempo real (SSE) para dashboard.
+- `scripts`: preparacion idempotente de esquema e indices DB.
+
+## Tiempo real (SSE)
+
+- Endpoint: `GET /api/scanner/dashboard/stream`.
+- Requiere `Authorization: Bearer <token>` y permiso `scanner.dashboard.read`.
+- Envia snapshot inicial + updates cuando se registra:
+  - `POST /api/scanner/sales`
+  - `POST /api/scanner/payments`
+- Keepalive: comentario SSE periodico para mantener conexiones vivas.
+
+## Fuente de verdad de tiempo
+
+- La API normaliza timestamps a ISO UTC (`...Z`) antes de responder.
+- Config DB (`src/config/db.js`) fija `timezone: 'Z'` y `dateStrings` para evitar reinterpretacion por host/driver.
+- El frontend convierte/renderiza en la zona operativa (`America/Montevideo`, `UTC-03:00`).
 
 ## DB y performance
 
@@ -26,3 +44,11 @@
   - `idx_scanner_barcode`
   - `idx_scanner_barcode_normalized`
   - `idx_scanner_estado_id`
+- Script `npm run db:prepare:core` asegura esquema base de negocio:
+  - `auth_users`
+  - `sales_tickets`
+  - `sales_ticket_items`
+  - `cash_payments`
+- Tambien asegura:
+  - foreign keys (`sales_tickets.user_id`, `sales_ticket_items.sale_id`, `cash_payments.user_id`)
+  - indices para consultas por fecha, estado, usuario y producto.

@@ -19,6 +19,8 @@ export function getPool() {
       user: env.db.user,
       password: env.db.password,
       database: env.db.database,
+      timezone: 'Z',
+      dateStrings: ['DATE', 'DATETIME', 'TIMESTAMP'],
       ssl: env.db.ssl ? { rejectUnauthorized: false } : undefined,
       waitForConnections: true,
       connectionLimit: 10

@@ -1,7 +1,8 @@
-﻿import express from 'express';
+import express from 'express';
 import cors from 'cors';
 import healthRoutes from './modules/health/health.routes.js';
 import scannerRoutes from './modules/scanner/scanner.routes.js';
+import authRoutes from './modules/auth/auth.routes.js';
 import { env } from './config/env.js';
 
 export function createApp() {
@@ -36,6 +37,7 @@ export function createApp() {
   });
 
   app.use('/api', healthRoutes);
+  app.use('/api', authRoutes);
   app.use('/api/scanner', scannerRoutes);
 
   app.use((error, _req, res, _next) => {
@@ -57,3 +59,4 @@ export function createApp() {
 
   return app;
 }
+
