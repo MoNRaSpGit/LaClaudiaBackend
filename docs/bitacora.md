@@ -137,3 +137,39 @@ Estamos en etapa de consolidar logica de caja y ventas en frontend, para luego b
   2. cargar `AUTH_BOOTSTRAP_ADMIN_*` en `.env`.
   3. ejecutar `npm run db:prepare:all`.
   4. validar login con `POST /api/auth/login`.
+
+## Datos de servicios (infra actual)
+
+### Base de datos MySQL (cloud)
+
+- Plan: `XXS Medium Space`
+- Addon ID: `mysql_21b05d3f-23cf-4617-90a9-d942c4eaad75`
+- Zona: `FR (Paris, France)` sobre `clever-cloud`
+- Tipo: `Dedicated`
+- Max connection limit: `15`
+- Max db size: `1 GB`
+- vCPUs: `1`
+- Memoria: `512 MB`
+- Backups: `daily`, `7` retenidos
+- Metrics: `Yes`
+- Logs: `Yes`
+
+### Backend Render (cloud)
+
+- RAM: `512 MB`
+- CPU: `0.5`
+- Plan pago con soporte para:
+  - Zero Downtime
+  - SSH Access
+  - Scaling
+  - One-off jobs
+  - Persistent disks
+
+### Nota operativa de capacidad (estimacion inicial)
+
+- Con arquitectura y queries bien optimizadas:
+  - `20-60` clientes activos mensuales sin estres.
+  - `5-20` clientes concurrentes en hora pico de forma comoda.
+- Cuellos de botella esperables en este tier:
+  - limite de conexiones MySQL (`15`).
+  - CPU/RAM del backend (`0.5 CPU / 512 MB`).
