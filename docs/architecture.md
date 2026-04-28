@@ -21,6 +21,12 @@
 - `scanner.stream`: capa de stream en tiempo real (SSE) para dashboard.
 - `scripts`: preparacion idempotente de esquema e indices DB.
 
+## Scanner catalogo (update)
+
+- Endpoint: `PUT /api/scanner/products/:id`.
+- Persistencia: `nombre`, `precio_venta` y `imagen`.
+- Guard: permiso `scanner.product.update`.
+
 ## Tiempo real (SSE)
 
 - Endpoint: `GET /api/scanner/dashboard/stream`.

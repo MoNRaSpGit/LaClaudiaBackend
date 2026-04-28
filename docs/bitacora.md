@@ -22,6 +22,16 @@ Backend estable para lookup y listado inicial de productos, conectado a BDD2 (`b
   - nuevo stream SSE `GET /api/scanner/dashboard/stream`.
   - push automatico a clientes al confirmar ventas/pagos.
 
+## Mini Changelog Tecnico (2026-04-27)
+
+- Scanner catalogo:
+  - nuevo endpoint `PUT /api/scanner/products/:id` para persistir edicion de producto desde scanner.
+  - normalizacion y validaciones para update de `nombre`, `precio_venta`, `thumbnail_url`.
+- Permisos:
+  - nuevo permiso `scanner.product.update` habilitado para `admin` y `operario`.
+- Imagen de producto:
+  - fix de compatibilidad en guardado: `imagen` ahora se persiste como string (data-url) para tablas con columna texto.
+
 ## Ruta Para Nuevo Agente (leer en este orden)
 
 1. `README.md` (scripts, env y endpoints activos).
@@ -113,6 +123,10 @@ Estamos en etapa de consolidar logica de caja y ventas en frontend, para luego b
 1. Endpoint para `barcode no encontrado` + alta rapida de producto manual real.
 2. Alta/baja de permisos por feature desde config/env si se requiere modo emergencia.
 3. Endpoint de alta de usuarios/roles con auditoria minima.
+
+## En que quedamos
+
+- hacer text manuales   y ver q errores salen
 
 ## Observaciones
 

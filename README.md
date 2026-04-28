@@ -107,4 +107,4 @@ Notas:
 
 - Build Command: `npm install`
 - Start Command: `npm start`
-- Root Directory: vacio
+- Root Directory: vacío
