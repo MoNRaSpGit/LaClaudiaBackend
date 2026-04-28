@@ -1,4 +1,5 @@
 import { getScannerDashboard } from './scanner.service.js';
+import { ROLES } from '../auth/auth.rbac.js';
 
 const dashboardSubscribers = new Map();
 let keepAliveTimer = null;
@@ -131,6 +132,10 @@ function sanitizeLiveScannerPayload(payload = {}, user = {}) {
 }
 
 export async function setLiveScannerState(rawPayload, user) {
+  const role = String(user?.role || '').trim().toLowerCase();
+  if (role !== ROLES.OPERARIO) {
+    return;
+  }
   latestLiveScannerState = sanitizeLiveScannerPayload(rawPayload, user);
 }
 
