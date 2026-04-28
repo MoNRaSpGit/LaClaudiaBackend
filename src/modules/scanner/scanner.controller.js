@@ -72,17 +72,23 @@ export async function scannerCreatePaymentController(req, res, next) {
   const startedAt = Date.now();
   try {
     const payload = req.body || {};
-    const payment = await registerScannerPayment({
+    const result = await registerScannerPayment({
       ...payload,
       userId: req.auth?.user?.id ?? payload.userId
     });
+    const payment = result?.payment || result;
+    const dbElapsedMs = Number(result?.meta?.dbElapsedMs || 0);
     const elapsedMs = Date.now() - startedAt;
+    const appElapsedMs = Math.max(elapsedMs - dbElapsedMs, 0);
     res.setHeader('X-Server-Time-Ms', String(elapsedMs));
+    res.setHeader('X-Server-Db-Time-Ms', String(dbElapsedMs));
     res.status(201).json({
       ok: true,
       payment,
       meta: {
-        elapsedMs
+        elapsedMs,
+        dbElapsedMs,
+        appElapsedMs
       }
     });
     notifyDashboardChanged().catch(() => {});

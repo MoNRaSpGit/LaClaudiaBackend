@@ -209,6 +209,7 @@ export async function createSaleTicket(salePayload) {
 
 export async function createCashPayment(paymentPayload) {
   const pool = getDbPoolOrThrow();
+  const dbStartedAt = Date.now();
   const [result] = await pool.query(
     `
       INSERT INTO cash_payments (
@@ -226,13 +227,19 @@ export async function createCashPayment(paymentPayload) {
       paymentPayload.description
     ]
   );
+  const dbElapsedMs = Date.now() - dbStartedAt;
 
   return {
-    id: Number(result.insertId),
-    external_id: paymentPayload.external_id,
-    amount: paymentPayload.amount,
-    description: paymentPayload.description,
-    created_at: new Date().toISOString()
+    payment: {
+      id: Number(result.insertId),
+      external_id: paymentPayload.external_id,
+      amount: paymentPayload.amount,
+      description: paymentPayload.description,
+      created_at: new Date().toISOString()
+    },
+    meta: {
+      dbElapsedMs
+    }
   };
 }
 
@@ -349,6 +356,7 @@ export async function listPaymentMovementsBetween(startDate, endDate, limit) {
 
 export async function listRankingBetween(startDate, endDate, limit) {
   const pool = getDbPoolOrThrow();
+  const tableName = escapeId(env.productsTable);
   const [rows] = await pool.query(
     `
       SELECT
@@ -357,9 +365,12 @@ export async function listRankingBetween(startDate, endDate, limit) {
           ELSE CONCAT('product:', si.product_id)
         END AS ranking_key,
         MAX(si.product_name) AS name,
-        SUM(si.quantity) AS qty
+        SUM(si.quantity) AS qty,
+        MAX(NULLIF(si.thumbnail_url, '')) AS thumbnail_url,
+        MAX(p.imagen) AS imagen
       FROM sales_ticket_items si
       INNER JOIN sales_tickets st ON st.id = si.sale_id
+      LEFT JOIN ${tableName} p ON p.id = si.product_id
       WHERE st.status = 'confirmed'
         AND st.created_at >= ?
         AND st.created_at < ?

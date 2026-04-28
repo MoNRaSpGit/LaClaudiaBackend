@@ -184,12 +184,16 @@ function aggregateRankingRows(rows) {
     const previous = byKey.get(key);
     const qty = Number(item?.qty || 0);
     const name = String(item?.name || '').trim() || key;
+    const thumbnailUrlFromTicket = resolveThumbnailUrl(item?.thumbnail_url);
+    const thumbnailUrlFromCatalog = resolveThumbnailUrl(item?.imagen);
+    const thumbnailUrl = thumbnailUrlFromTicket || thumbnailUrlFromCatalog || null;
 
     if (!previous) {
       byKey.set(key, {
         key,
         name,
-        qty
+        qty,
+        thumbnail_url: thumbnailUrl
       });
       return;
     }
@@ -197,6 +201,9 @@ function aggregateRankingRows(rows) {
     previous.qty += qty;
     if (!previous.name && name) {
       previous.name = name;
+    }
+    if (!previous.thumbnail_url && thumbnailUrl) {
+      previous.thumbnail_url = thumbnailUrl;
     }
   });
 
@@ -271,7 +278,15 @@ export async function registerScannerPayment(rawPayload) {
   const normalized = normalizePaymentPayload(rawPayload);
 
   try {
-    return await createCashPayment(normalized);
+    const result = await createCashPayment(normalized);
+    const payment = result?.payment || result;
+    const dbElapsedMs = Number(result?.meta?.dbElapsedMs || 0);
+    return {
+      payment,
+      meta: {
+        dbElapsedMs
+      }
+    };
   } catch (error) {
     if (error?.code === 'ER_DUP_ENTRY') {
       const duplicateError = new Error('El pago ya fue registrado (externalId duplicado)');
