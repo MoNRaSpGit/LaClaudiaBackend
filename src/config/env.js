@@ -34,7 +34,8 @@ export const env = {
     bootstrapAdminUser: process.env.AUTH_BOOTSTRAP_ADMIN_USER || '',
     bootstrapAdminPasswordHash: process.env.AUTH_BOOTSTRAP_ADMIN_PASSWORD_HASH || '',
     bootstrapAdminDisplayName: process.env.AUTH_BOOTSTRAP_ADMIN_DISPLAY_NAME || '',
-    sessionDurationHours: parseInteger(process.env.AUTH_SESSION_HOURS, 12, 1, 24 * 30),
+    sessionDurationHours: parseInteger(process.env.AUTH_SESSION_HOURS, 24 * 365 * 10, 1, 24 * 365 * 20),
+    sessionSlidingRenewal: parseBoolean(process.env.AUTH_SESSION_SLIDING_RENEWAL, true),
     sessionCleanupRetentionDays: parseInteger(process.env.AUTH_SESSION_CLEANUP_RETENTION_DAYS, 7, 1, 3650),
     sessionCleanupBatchSize: parseInteger(process.env.AUTH_SESSION_CLEANUP_BATCH_SIZE, 500, 10, 5000)
   },

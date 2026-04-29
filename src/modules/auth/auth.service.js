@@ -1,6 +1,7 @@
 import { env } from '../../config/env.js';
 import {
   createAuthSession,
+  extendSessionExpiryById,
   findActiveSessionByTokenHash,
   findActiveUserByUsername,
   revokeSessionByTokenHash,
@@ -98,6 +99,10 @@ export async function resolveAuthenticatedSession(authorizationHeader) {
   }
 
   await touchSessionLastSeenById(Number(session.session_id));
+  if (env.auth.sessionSlidingRenewal) {
+    const renewedExpiresAt = buildExpiresAt();
+    await extendSessionExpiryById(Number(session.session_id), renewedExpiresAt.dbValue);
+  }
 
   return {
     sessionId: Number(session.session_id),

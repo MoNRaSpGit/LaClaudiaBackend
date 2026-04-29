@@ -21,6 +21,14 @@
 - `scanner.stream`: capa de stream en tiempo real (SSE) para dashboard.
 - `scripts`: preparacion idempotente de esquema e indices DB.
 
+## Auth (sesiones)
+
+- Sesion persistida en `auth_sessions`.
+- Expiracion base configurable por `AUTH_SESSION_HOURS`.
+- Renovacion deslizante opcional por `AUTH_SESSION_SLIDING_RENEWAL`:
+  - al validar token, se actualiza `last_seen_at`.
+  - si sliding esta activo, tambien se renueva `expires_at`.
+
 ## Scanner catalogo (update)
 
 - Endpoint: `PUT /api/scanner/products/:id`.

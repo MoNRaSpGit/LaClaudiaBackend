@@ -24,6 +24,14 @@ Backend estable para lookup y listado inicial de productos, conectado a BDD2 (`b
 
 ## Mini Changelog Tecnico (2026-04-27)
 
+- Auth sesion extendida (2026-04-29):
+  - `AUTH_SESSION_HOURS` ampliado (default) para sesiones de larga duracion.
+  - agregado `AUTH_SESSION_SLIDING_RENEWAL=true` (default):
+    - cada request autenticado renueva `expires_at` de la sesion.
+    - objetivo: minimizar cierres por inactividad corta y privilegiar logout manual.
+  - nota operativa:
+    - sesiones creadas antes del cambio conservan expiracion previa hasta nuevo login.
+
 - Scanner catalogo:
   - nuevo endpoint `PUT /api/scanner/products/:id` para persistir edicion de producto desde scanner.
   - normalizacion y validaciones para update de `nombre`, `precio_venta`, `thumbnail_url`.

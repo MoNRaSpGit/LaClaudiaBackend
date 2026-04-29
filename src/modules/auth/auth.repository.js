@@ -95,6 +95,19 @@ export async function touchSessionLastSeenById(sessionId) {
   );
 }
 
+export async function extendSessionExpiryById(sessionId, expiresAt) {
+  const pool = getDbPoolOrThrow();
+  await pool.query(
+    `
+      UPDATE auth_sessions
+      SET expires_at = ?
+      WHERE id = ?
+        AND revoked_at IS NULL
+    `,
+    [expiresAt, sessionId]
+  );
+}
+
 export async function revokeSessionByTokenHash(tokenHash) {
   const pool = getDbPoolOrThrow();
   const [result] = await pool.query(
