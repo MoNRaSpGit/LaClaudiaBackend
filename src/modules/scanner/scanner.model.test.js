@@ -3,6 +3,7 @@ import {
   normalizeDashboardInitialCashPayload,
   normalizeDashboardParams,
   normalizePaymentPayload,
+  normalizeProductCreatePayload,
   normalizeProductUpdatePayload,
   normalizeSalePayload
 } from './scanner.model.js';
@@ -169,5 +170,30 @@ describe('normalizeProductUpdatePayload', () => {
     expect(() => normalizeProductUpdatePayload('0', { nombre: 'X', precio_venta: 10 })).toThrow('productId invalido');
     expect(() => normalizeProductUpdatePayload('4', { nombre: '', precio_venta: 10 })).toThrow('nombre requerido');
     expect(() => normalizeProductUpdatePayload('4', { nombre: 'X', precio_venta: 0 })).toThrow('precio_venta invalido');
+  });
+});
+
+describe('normalizeProductCreatePayload', () => {
+  it('normalizes valid product creations', () => {
+    expect(
+      normalizeProductCreatePayload({
+        barcode: ' 779123 ',
+        nombre: 'Coca Cola 600ml',
+        precio_venta: '150.50'
+      })
+    ).toEqual({
+      barcode: '779123',
+      barcode_normalized: '779123',
+      nombre: 'Coca Cola 600ml',
+      precio_venta: 150.5,
+      categoria: 'manual',
+      thumbnail_url: undefined
+    });
+  });
+
+  it('rejects invalid creation data', () => {
+    expect(() => normalizeProductCreatePayload({ nombre: 'X', precio_venta: 10 })).toThrow('barcode requerido');
+    expect(() => normalizeProductCreatePayload({ barcode: '779', nombre: '', precio_venta: 10 })).toThrow('nombre requerido');
+    expect(() => normalizeProductCreatePayload({ barcode: '779', nombre: 'X', precio_venta: 0 })).toThrow('precio_venta invalido');
   });
 });

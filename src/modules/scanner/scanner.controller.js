@@ -1,4 +1,5 @@
 import {
+  createScannerProduct,
   getScannerDashboard,
   getScannerProducts,
   lookupProductByBarcode,
@@ -34,6 +35,18 @@ export async function scannerListController(req, res, next) {
     res.json({
       ok: true,
       ...data
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerCreateProductController(req, res, next) {
+  try {
+    const item = await createScannerProduct(req.body || {});
+    res.status(201).json({
+      ok: true,
+      item
     });
   } catch (error) {
     next(error);

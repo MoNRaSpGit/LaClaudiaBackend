@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth, requirePermission } from '../auth/auth.middleware.js';
 import { PERMISSIONS } from '../auth/auth.rbac.js';
 import {
+  scannerCreateProductController,
   scannerCreatePaymentController,
   scannerCreateSaleController,
   scannerDashboardController,
@@ -18,6 +19,7 @@ const router = Router();
 router.get('/products', scannerListController);
 router.get('/products/lookup', scannerLookupController);
 router.use(requireAuth);
+router.post('/products', requirePermission(PERMISSIONS.SCANNER_PRODUCT_CREATE), scannerCreateProductController);
 router.put('/products/:id', requirePermission(PERMISSIONS.SCANNER_PRODUCT_UPDATE), scannerUpdateProductController);
 router.post('/live-state', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerUpdateLiveStateController);
 router.post('/sales', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerCreateSaleController);

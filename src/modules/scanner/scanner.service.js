@@ -1,4 +1,5 @@
 import {
+  createProduct,
   createCashPayment,
   createSaleTicket,
   findProductById,
@@ -21,6 +22,7 @@ import {
   normalizeDashboardInitialCashPayload,
   normalizeLimit,
   normalizePaymentPayload,
+  normalizeProductCreatePayload,
   normalizeProductUpdatePayload,
   normalizeSalePayload
 } from './scanner.model.js';
@@ -239,6 +241,30 @@ export async function getScannerProducts(rawLimit) {
     count: items.length,
     items: items.map(toScannerProduct)
   };
+}
+
+export async function createScannerProduct(rawPayload) {
+  const normalized = normalizeProductCreatePayload(rawPayload);
+  const existing = await findProductByBarcode(normalized.barcode_normalized);
+
+  if (existing) {
+    const error = new Error('Ya existe un producto para ese barcode');
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const imagen = decodeImagePayload(normalized.thumbnail_url);
+  const productId = await createProduct({
+    nombre: normalized.nombre,
+    precio_venta: normalized.precio_venta,
+    categoria: normalized.categoria,
+    barcode: normalized.barcode,
+    barcode_normalized: normalized.barcode_normalized,
+    imagen
+  });
+
+  const created = await findProductById(productId);
+  return toScannerProduct(created);
 }
 
 export async function updateScannerProduct(rawProductId, rawPayload) {

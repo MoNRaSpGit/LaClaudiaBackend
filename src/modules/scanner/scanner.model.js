@@ -373,3 +373,38 @@ export function normalizeProductUpdatePayload(rawProductId, rawPayload) {
     thumbnail_url: thumbnailUrl
   };
 }
+
+export function normalizeProductCreatePayload(rawPayload) {
+  const payload = rawPayload || {};
+  const barcode = normalizeBarcode(payload.barcode);
+  const nombre = String(payload.nombre || '').trim();
+  const precioVenta = normalizeMoney(payload.precio_venta);
+  const thumbnailUrl = normalizeOptionalImageSource(payload.thumbnail_url);
+
+  if (!barcode) {
+    const error = new Error('barcode requerido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!nombre) {
+    const error = new Error('nombre requerido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (precioVenta === null) {
+    const error = new Error('precio_venta invalido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    barcode,
+    barcode_normalized: barcode,
+    nombre,
+    precio_venta: precioVenta,
+    categoria: normalizeOptionalString(payload.categoria) || 'manual',
+    thumbnail_url: thumbnailUrl
+  };
+}

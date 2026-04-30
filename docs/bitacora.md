@@ -24,6 +24,12 @@ Backend estable para lookup y listado inicial de productos, conectado a BDD2 (`b
 
 ## Mini Changelog Tecnico (2026-04-27)
 
+- Alta rapida por barcode no encontrado (2026-04-30):
+  - agregado `POST /api/scanner/products` para persistir productos creados desde caja.
+  - validacion backend de `barcode`, `nombre` y `precio_venta`.
+  - proteccion de conflicto si el barcode ya existe.
+  - permiso nuevo `scanner.product.create` habilitado para `admin` y `operario`.
+
 - Calidad y auth operativa (2026-04-30):
   - suite base de tests backend agregada con `vitest`.
   - scripts disponibles:

@@ -122,6 +122,36 @@ export async function updateProductById(productId, payload) {
   return Number(result?.affectedRows || 0);
 }
 
+export async function createProduct(payload) {
+  const pool = getDbPoolOrThrow();
+  const tableName = escapeId(env.productsTable);
+  const [result] = await pool.query(
+    `
+      INSERT INTO ${tableName} (
+        nombre,
+        precio_venta,
+        stock_actual,
+        categoria,
+        barcode,
+        barcode_normalized,
+        tiene_imagen,
+        imagen
+      ) VALUES (?, ?, 0, ?, ?, ?, ?, ?)
+    `,
+    [
+      payload.nombre,
+      payload.precio_venta,
+      payload.categoria,
+      payload.barcode,
+      payload.barcode_normalized,
+      payload.imagen ? 1 : 0,
+      payload.imagen
+    ]
+  );
+
+  return Number(result?.insertId || 0);
+}
+
 function buildItemsInsertStatement(items) {
   const placeholders = items.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
   const values = items.flatMap((item) => ([
