@@ -382,3 +382,38 @@ export async function listRankingBetween(startDate, endDate, limit) {
   );
   return rows;
 }
+
+export async function getDashboardInitialCashByDate(dateLabel) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT initial_cash
+      FROM scanner_dashboard_daily
+      WHERE business_date = ?
+      LIMIT 1
+    `,
+    [dateLabel]
+  );
+
+  return rows[0] ? Number(rows[0].initial_cash || 0) : 0;
+}
+
+export async function upsertDashboardInitialCashByDate(dateLabel, initialCash) {
+  const pool = getDbPoolOrThrow();
+  await pool.query(
+    `
+      INSERT INTO scanner_dashboard_daily (
+        business_date,
+        initial_cash
+      ) VALUES (?, ?)
+      ON DUPLICATE KEY UPDATE
+        initial_cash = VALUES(initial_cash)
+    `,
+    [dateLabel, initialCash]
+  );
+
+  return {
+    date: dateLabel,
+    initial_cash: Number(initialCash || 0)
+  };
+}

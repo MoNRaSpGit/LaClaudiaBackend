@@ -304,6 +304,7 @@ export function normalizeDashboardParams(rawQuery) {
   const activeDateLabel = parseDateLabel(query.date) || getStoreTodayDateLabel();
   const activeRange = getStoreDayRangeUtc(activeDateLabel);
   const yesterdayRange = getStoreDayRangeUtc(shiftDateLabel(activeDateLabel, -1));
+  const hasInitialCashOverride = query.initialCash != null && query.initialCash !== '';
 
   return {
     dayStart: toMySqlDateTimeUtc(activeRange.dayStart),
@@ -312,9 +313,28 @@ export function normalizeDashboardParams(rawQuery) {
     yesterdayEnd: toMySqlDateTimeUtc(yesterdayRange.dayEnd),
     dateLabel: activeRange.dateLabel,
     initialCash: normalizeFloatRange(query.initialCash, 0, 0, 1000000000),
+    hasInitialCashOverride,
     profitRate: normalizeFloatRange(query.profitRate, 0.2, 0, 1),
     movementLimit: normalizeIntegerRange(query.movementLimit, 100, 1, 500),
     rankingLimit: normalizeIntegerRange(query.rankingLimit, 20, 1, 100)
+  };
+}
+
+export function normalizeDashboardInitialCashPayload(rawPayload, rawQuery) {
+  const payload = rawPayload || {};
+  const query = rawQuery || {};
+  const dateLabel = parseDateLabel(payload.date || query.date) || getStoreTodayDateLabel();
+  const initialCash = normalizeFloatRange(payload.initialCash, null, 0, 1000000000);
+
+  if (initialCash === null) {
+    const error = new Error('initialCash invalido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    dateLabel,
+    initialCash
   };
 }
 

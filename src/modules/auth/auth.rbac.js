@@ -9,7 +9,8 @@ export const PERMISSIONS = Object.freeze({
   SCANNER_LOOKUP_READ: 'scanner.lookup.read',
   SCANNER_SALE_CREATE: 'scanner.sale.create',
   SCANNER_DASHBOARD_READ: 'scanner.dashboard.read',
-  SCANNER_PAYMENT_CREATE: 'scanner.payment.create'
+  SCANNER_PAYMENT_CREATE: 'scanner.payment.create',
+  SCANNER_DASHBOARD_UPDATE: 'scanner.dashboard.update'
 });
 
 export const ROLE_PERMISSIONS = Object.freeze({
@@ -19,7 +20,8 @@ export const ROLE_PERMISSIONS = Object.freeze({
     PERMISSIONS.SCANNER_LOOKUP_READ,
     PERMISSIONS.SCANNER_SALE_CREATE,
     PERMISSIONS.SCANNER_DASHBOARD_READ,
-    PERMISSIONS.SCANNER_PAYMENT_CREATE
+    PERMISSIONS.SCANNER_PAYMENT_CREATE,
+    PERMISSIONS.SCANNER_DASHBOARD_UPDATE
   ]),
   [ROLES.OPERARIO]: new Set([
     PERMISSIONS.SCANNER_PRODUCTS_READ,

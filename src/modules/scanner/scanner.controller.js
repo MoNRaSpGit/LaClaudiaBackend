@@ -4,6 +4,7 @@ import {
   lookupProductByBarcode,
   registerScannerPayment,
   registerScannerSale,
+  updateScannerDashboardInitialCash,
   updateScannerProduct
 } from './scanner.service.js';
 import {
@@ -104,6 +105,19 @@ export async function scannerDashboardController(req, res, next) {
       ok: true,
       dashboard
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerUpdateDashboardInitialCashController(req, res, next) {
+  try {
+    const settings = await updateScannerDashboardInitialCash(req.body || {}, req.query || {});
+    res.json({
+      ok: true,
+      settings
+    });
+    notifyDashboardChanged().catch(() => {});
   } catch (error) {
     next(error);
   }

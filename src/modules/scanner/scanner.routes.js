@@ -8,6 +8,7 @@ import {
   scannerDashboardStreamController,
   scannerListController,
   scannerLookupController,
+  scannerUpdateDashboardInitialCashController,
   scannerUpdateProductController,
   scannerUpdateLiveStateController
 } from './scanner.controller.js';
@@ -22,6 +23,7 @@ router.post('/live-state', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), s
 router.post('/sales', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerCreateSaleController);
 router.get('/dashboard', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_READ), scannerDashboardController);
 router.get('/dashboard/stream', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_READ), scannerDashboardStreamController);
+router.put('/dashboard/initial-cash', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_UPDATE), scannerUpdateDashboardInitialCashController);
 router.post('/payments', requirePermission(PERMISSIONS.SCANNER_PAYMENT_CREATE), scannerCreatePaymentController);
 
 export default router;

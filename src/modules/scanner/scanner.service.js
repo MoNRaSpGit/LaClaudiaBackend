@@ -3,6 +3,7 @@ import {
   createSaleTicket,
   findProductById,
   findProductByBarcode,
+  getDashboardInitialCashByDate,
   getBestSalesDayTotal,
   listPaymentMovementsBetween,
   listProducts,
@@ -11,11 +12,13 @@ import {
   listSalesMovementsBetween,
   sumConfirmedPaymentsBetween,
   sumConfirmedSalesBetween,
+  upsertDashboardInitialCashByDate,
   updateProductById
 } from './scanner.repository.js';
 import {
   normalizeBarcode,
   normalizeDashboardParams,
+  normalizeDashboardInitialCashPayload,
   normalizeLimit,
   normalizePaymentPayload,
   normalizeProductUpdatePayload,
@@ -297,8 +300,21 @@ export async function registerScannerPayment(rawPayload) {
   }
 }
 
+export async function updateScannerDashboardInitialCash(rawPayload, rawQuery) {
+  const normalized = normalizeDashboardInitialCashPayload(rawPayload, rawQuery);
+  const updated = await upsertDashboardInitialCashByDate(normalized.dateLabel, normalized.initialCash);
+
+  return {
+    date: updated.date,
+    initialCash: roundMoney(updated.initial_cash)
+  };
+}
+
 export async function getScannerDashboard(rawQuery) {
   const params = normalizeDashboardParams(rawQuery);
+  const storedInitialCash = params.hasInitialCashOverride
+    ? roundMoney(params.initialCash)
+    : roundMoney(await getDashboardInitialCashByDate(params.dateLabel));
 
   const [
     salesToday,
@@ -329,10 +345,10 @@ export async function getScannerDashboard(rawQuery) {
   );
 
   const metrics = {
-    initialCash: roundMoney(params.initialCash),
+    initialCash: storedInitialCash,
     salesToday: roundMoney(salesToday),
     profitToday: roundMoney(salesToday * params.profitRate),
-    currentAmount: roundMoney(params.initialCash + salesToday - paymentsToday),
+    currentAmount: roundMoney(storedInitialCash + salesToday - paymentsToday),
     paymentsTotal: roundMoney(paymentsToday),
     profitRate: params.profitRate
   };

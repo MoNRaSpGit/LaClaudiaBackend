@@ -134,6 +134,17 @@ async function ensureTables(pool) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
   console.log('[core-schema] tabla cash_payments lista');
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS scanner_dashboard_daily (
+      business_date DATE NOT NULL,
+      initial_cash DECIMAL(12,2) NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (business_date)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+  console.log('[core-schema] tabla scanner_dashboard_daily lista');
 }
 
 async function ensureConstraintsAndIndexes(pool) {
@@ -212,6 +223,7 @@ async function ensureConstraintsAndIndexes(pool) {
   await ensureIndex(pool, 'cash_payments', 'idx_cash_payments_created_at', 'ALTER TABLE cash_payments ADD INDEX idx_cash_payments_created_at (created_at)');
   await ensureIndex(pool, 'cash_payments', 'idx_cash_payments_user_created', 'ALTER TABLE cash_payments ADD INDEX idx_cash_payments_user_created (user_id, created_at)');
   await ensureIndex(pool, 'cash_payments', 'idx_cash_payments_status_created', 'ALTER TABLE cash_payments ADD INDEX idx_cash_payments_status_created (status, created_at)');
+  await ensureIndex(pool, 'scanner_dashboard_daily', 'idx_scanner_dashboard_daily_updated_at', 'ALTER TABLE scanner_dashboard_daily ADD INDEX idx_scanner_dashboard_daily_updated_at (updated_at)');
 }
 
 async function ensureBootstrapAdmin(pool) {
