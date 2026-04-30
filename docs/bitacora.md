@@ -24,6 +24,25 @@ Backend estable para lookup y listado inicial de productos, conectado a BDD2 (`b
 
 ## Mini Changelog Tecnico (2026-04-27)
 
+- Calidad y auth operativa (2026-04-30):
+  - suite base de tests backend agregada con `vitest`.
+  - scripts disponibles:
+    - `npm test`
+    - `npm run test:watch`
+  - cobertura inicial incorporada:
+    - `src/modules/scanner/scanner.model.test.js`
+    - `src/modules/auth/auth.rbac.test.js`
+    - `src/modules/auth/auth.model.test.js`
+  - estado validado:
+    - `3` archivos.
+    - `17` tests pasando.
+  - bug real corregido durante esta etapa:
+    - `initialCash` negativo ya no se normaliza silenciosamente a `0`; ahora se rechaza como payload invalido.
+  - auth operativa de caja alineada con frontend:
+    - usuario `admin` activo con clave simple `admin123`.
+    - usuario `nova` activo como `operario` con clave simple `nova123`.
+    - objetivo: reducir friccion de ingreso sin volver a un login simulado.
+
 - Auth sesion extendida (2026-04-29):
   - `AUTH_SESSION_HOURS` ampliado (default) para sesiones de larga duracion.
   - agregado `AUTH_SESSION_SLIDING_RENEWAL=true` (default):
