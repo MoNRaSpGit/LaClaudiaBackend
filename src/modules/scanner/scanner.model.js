@@ -2,6 +2,8 @@ export function normalizeBarcode(rawBarcode) {
   return String(rawBarcode || '').trim();
 }
 
+const STORE_TIME_ZONE = 'America/Montevideo';
+
 export function normalizeLimit(rawLimit) {
   const parsed = Number(rawLimit);
   if (!Number.isFinite(parsed)) {
@@ -104,6 +106,103 @@ function parseDateOnly(rawValue) {
   return date;
 }
 
+function getDatePartsInTimeZone(date, timeZone) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+  });
+
+  const parts = formatter.formatToParts(date);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+
+  return {
+    year: Number(map.year),
+    month: Number(map.month),
+    day: Number(map.day),
+    hour: Number(map.hour),
+    minute: Number(map.minute),
+    second: Number(map.second)
+  };
+}
+
+function getTimeZoneOffsetMs(date, timeZone) {
+  const parts = getDatePartsInTimeZone(date, timeZone);
+  const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  return asUtc - date.getTime();
+}
+
+function getUtcDateForStoreDateTime(year, month, day, hour = 0, minute = 0, second = 0) {
+  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  const offsetMs = getTimeZoneOffsetMs(utcGuess, STORE_TIME_ZONE);
+  const shifted = new Date(utcGuess.getTime() - offsetMs);
+  const shiftedOffsetMs = getTimeZoneOffsetMs(shifted, STORE_TIME_ZONE);
+
+  if (shiftedOffsetMs === offsetMs) {
+    return shifted;
+  }
+
+  return new Date(utcGuess.getTime() - shiftedOffsetMs);
+}
+
+function toDateLabelFromParts(year, month, day) {
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function parseDateLabel(rawValue) {
+  const date = parseDateOnly(rawValue);
+  if (!date) {
+    return null;
+  }
+
+  return toDateLabelFromParts(
+    date.getUTCFullYear(),
+    date.getUTCMonth() + 1,
+    date.getUTCDate()
+  );
+}
+
+function getStoreTodayDateLabel() {
+  const parts = getDatePartsInTimeZone(new Date(), STORE_TIME_ZONE);
+  return toDateLabelFromParts(parts.year, parts.month, parts.day);
+}
+
+function shiftDateLabel(dateLabel, days) {
+  const parsed = parseDateOnly(dateLabel);
+  if (!parsed) {
+    return null;
+  }
+
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+  return toDateLabelFromParts(
+    parsed.getUTCFullYear(),
+    parsed.getUTCMonth() + 1,
+    parsed.getUTCDate()
+  );
+}
+
+function getStoreDayRangeUtc(dateLabel) {
+  const normalizedDateLabel = parseDateLabel(dateLabel);
+  if (!normalizedDateLabel) {
+    return null;
+  }
+
+  const [year, month, day] = normalizedDateLabel.split('-').map((value) => Number(value));
+  const nextDateLabel = shiftDateLabel(normalizedDateLabel, 1);
+  const [nextYear, nextMonth, nextDay] = nextDateLabel.split('-').map((value) => Number(value));
+
+  return {
+    dayStart: getUtcDateForStoreDateTime(year, month, day, 0, 0, 0),
+    dayEnd: getUtcDateForStoreDateTime(nextYear, nextMonth, nextDay, 0, 0, 0),
+    dateLabel: normalizedDateLabel
+  };
+}
+
 function toMySqlDateTimeUtc(date) {
   return date.toISOString().slice(0, 19).replace('T', ' ');
 }
@@ -202,21 +301,17 @@ export function normalizePaymentPayload(rawPayload) {
 
 export function normalizeDashboardParams(rawQuery) {
   const query = rawQuery || {};
-  const dayStart = parseDateOnly(query.date) || new Date(new Date().setUTCHours(0, 0, 0, 0));
-  const dayEnd = new Date(dayStart);
-  dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
-
-  const yesterdayStart = new Date(dayStart);
-  yesterdayStart.setUTCDate(yesterdayStart.getUTCDate() - 1);
-  const yesterdayEnd = new Date(dayStart);
+  const activeDateLabel = parseDateLabel(query.date) || getStoreTodayDateLabel();
+  const activeRange = getStoreDayRangeUtc(activeDateLabel);
+  const yesterdayRange = getStoreDayRangeUtc(shiftDateLabel(activeDateLabel, -1));
 
   return {
-    dayStart: toMySqlDateTimeUtc(dayStart),
-    dayEnd: toMySqlDateTimeUtc(dayEnd),
-    yesterdayStart: toMySqlDateTimeUtc(yesterdayStart),
-    yesterdayEnd: toMySqlDateTimeUtc(yesterdayEnd),
-    dateLabel: dayStart.toISOString().slice(0, 10),
-    initialCash: normalizeFloatRange(query.initialCash, 1000, 0, 1000000000),
+    dayStart: toMySqlDateTimeUtc(activeRange.dayStart),
+    dayEnd: toMySqlDateTimeUtc(activeRange.dayEnd),
+    yesterdayStart: toMySqlDateTimeUtc(yesterdayRange.dayStart),
+    yesterdayEnd: toMySqlDateTimeUtc(yesterdayRange.dayEnd),
+    dateLabel: activeRange.dateLabel,
+    initialCash: normalizeFloatRange(query.initialCash, 0, 0, 1000000000),
     profitRate: normalizeFloatRange(query.profitRate, 0.2, 0, 1),
     movementLimit: normalizeIntegerRange(query.movementLimit, 100, 1, 500),
     rankingLimit: normalizeIntegerRange(query.rankingLimit, 20, 1, 100)
