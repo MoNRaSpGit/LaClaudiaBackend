@@ -116,7 +116,7 @@
 ### Headers
 
 - `Authorization: Bearer <token>`
-- Roles permitidos: `admin`
+- Roles permitidos: `admin`, `operario`
 
 ### Request
 
@@ -160,7 +160,7 @@
 
 - `date=YYYY-MM-DD` (default: hoy)
 - `initialCash=1000` (default: 1000)
-- `profitRate=0.2` (default: 0.2)
+- `profitRate=0.4` (default: 0.4)
 - `movementLimit=100` (default: 100)
 - `rankingLimit=20` (default: 20)
 
@@ -177,7 +177,7 @@
       "profitToday": 58,
       "currentAmount": 940,
       "paymentsTotal": 350,
-      "profitRate": 0.2
+      "profitRate": 0.4
     },
     "comparison": {
       "today": 290,

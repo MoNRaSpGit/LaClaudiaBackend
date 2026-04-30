@@ -24,6 +24,14 @@ Backend estable para lookup y listado inicial de productos, conectado a BDD2 (`b
 
 ## Mini Changelog Tecnico (2026-04-27)
 
+- Pagos para operario (2026-04-30):
+  - `operario` ahora tiene permiso `scanner.payment.create`.
+  - los pagos registrados desde UI operativa impactan en `cash_payments` y aparecen en movimientos del dashboard admin.
+
+- Margen diario del panel (2026-04-30):
+  - `profitRate` por defecto actualizado de `20%` a `40%`.
+  - impacta en `Ganancia diaria` cuando el dashboard no recibe override explicito por query.
+
 - Alta rapida por barcode no encontrado (2026-04-30):
   - agregado `POST /api/scanner/products` para persistir productos creados desde caja.
   - validacion backend de `barcode`, `nombre` y `precio_venta`.

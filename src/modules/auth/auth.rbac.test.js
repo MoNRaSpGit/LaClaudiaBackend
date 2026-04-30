@@ -10,6 +10,10 @@ describe('roleHasPermission', () => {
     expect(roleHasPermission(ROLES.OPERARIO, PERMISSIONS.SCANNER_DASHBOARD_UPDATE)).toBe(false);
   });
 
+  it('allows operario payment create permission', () => {
+    expect(roleHasPermission(ROLES.OPERARIO, PERMISSIONS.SCANNER_PAYMENT_CREATE)).toBe(true);
+  });
+
   it('is resilient to unknown roles or permissions', () => {
     expect(roleHasPermission('guest', PERMISSIONS.SCANNER_DASHBOARD_READ)).toBe(false);
     expect(roleHasPermission(ROLES.ADMIN, '')).toBe(false);

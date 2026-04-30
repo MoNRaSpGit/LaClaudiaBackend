@@ -314,7 +314,7 @@ export function normalizeDashboardParams(rawQuery) {
     dateLabel: activeRange.dateLabel,
     initialCash: normalizeFloatRange(query.initialCash, 0, 0, 1000000000),
     hasInitialCashOverride,
-    profitRate: normalizeFloatRange(query.profitRate, 0.2, 0, 1),
+    profitRate: normalizeFloatRange(query.profitRate, 0.4, 0, 1),
     movementLimit: normalizeIntegerRange(query.movementLimit, 100, 1, 500),
     rankingLimit: normalizeIntegerRange(query.rankingLimit, 20, 1, 100)
   };

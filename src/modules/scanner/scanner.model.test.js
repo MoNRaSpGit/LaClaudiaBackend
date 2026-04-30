@@ -20,7 +20,7 @@ describe('normalizeDashboardParams', () => {
       dateLabel: '2026-04-30',
       initialCash: 0,
       hasInitialCashOverride: false,
-      profitRate: 0.2,
+      profitRate: 0.4,
       movementLimit: 100,
       rankingLimit: 20
     });
