@@ -53,7 +53,7 @@ Backend estable para lookup y listado inicial de productos, conectado a BDD2 (`b
   - bug real corregido durante esta etapa:
     - `initialCash` negativo ya no se normaliza silenciosamente a `0`; ahora se rechaza como payload invalido.
   - auth operativa de caja alineada con frontend:
-    - usuario `admin` activo con clave simple `admin123`.
+    - usuario `admin` activo con clave simple `1994`.
     - usuario `nova` activo como `operario` con clave simple `nova123`.
     - objetivo: reducir friccion de ingreso sin volver a un login simulado.
 
