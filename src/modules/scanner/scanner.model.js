@@ -324,7 +324,10 @@ export function normalizeDashboardInitialCashPayload(rawPayload, rawQuery) {
   const payload = rawPayload || {};
   const query = rawQuery || {};
   const dateLabel = parseDateLabel(payload.date || query.date) || getStoreTodayDateLabel();
-  const initialCash = normalizeFloatRange(payload.initialCash, null, 0, 1000000000);
+  const parsedInitialCash = Number(payload.initialCash);
+  const initialCash = Number.isFinite(parsedInitialCash) && parsedInitialCash >= 0 && parsedInitialCash <= 1000000000
+    ? Number(parsedInitialCash.toFixed(2))
+    : null;
 
   if (initialCash === null) {
     const error = new Error('initialCash invalido');
