@@ -64,7 +64,8 @@ Backend estable para lookup y listado inicial de productos, conectado a BDD2 (`b
 1. `README.md` (scripts, env y endpoints activos).
 2. `docs/contracts-auth-sales.md` (contrato vigente).
 3. `docs/bitacora.md` (estado y pendientes inmediatos).
-4. `src/modules/auth/*`, `src/modules/scanner/*`, `src/scripts/*`.
+4. `docs/saas-rebuild-backend.md` (captura funcional para reconstruccion futura en SaaS).
+5. `src/modules/auth/*`, `src/modules/scanner/*`, `src/scripts/*`.
 
 ## Lo que ya quedo listo
 
