@@ -27,3 +27,14 @@ export async function logoutController(req, res, next) {
     next(error);
   }
 }
+
+export async function sessionController(req, res, next) {
+  try {
+    res.json({
+      ok: true,
+      user: req.auth?.user || null
+    });
+  } catch (error) {
+    next(error);
+  }
+}

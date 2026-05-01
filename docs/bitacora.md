@@ -24,6 +24,12 @@ Backend estable para lookup y listado inicial de productos, conectado a BDD2 (`b
 
 ## Mini Changelog Tecnico (2026-04-27)
 
+- Keepalive autenticado de sesion (2026-05-01):
+  - nuevo endpoint `GET /api/auth/session` protegido con `requireAuth`.
+  - devuelve estado `ok` + usuario autenticado actual.
+  - se usa como touch liviano desde frontend para mantener renovacion deslizante de `expires_at` en jornadas largas de caja.
+  - objetivo operativo: minimizar expiraciones en medio de trabajo sin depender de logout/login manual.
+
 - Pagos para operario (2026-04-30):
   - `operario` ahora tiene permiso `scanner.payment.create`.
   - los pagos registrados desde UI operativa impactan en `cash_payments` y aparecen en movimientos del dashboard admin.
