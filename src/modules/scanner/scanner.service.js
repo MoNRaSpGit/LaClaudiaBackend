@@ -1,11 +1,13 @@
 import {
   createProduct,
   createCashPayment,
+  createScannerDiagnosticEvent,
   createSaleTicket,
   findProductById,
   findProductByBarcode,
   getDashboardInitialCashByDate,
   getBestSalesDayTotal,
+  listScannerDiagnosticEvents,
   listPaymentMovementsBetween,
   listProducts,
   listRankingBetween,
@@ -66,6 +68,46 @@ function toScannerProduct(product) {
 
 function roundMoney(value) {
   return Number(Number(value || 0).toFixed(2));
+}
+
+function sanitizeShortText(rawValue, { fallback = '', max = 255 } = {}) {
+  const value = String(rawValue || '').trim();
+  if (!value) {
+    return fallback;
+  }
+  return value.slice(0, max);
+}
+
+function normalizeDiagnosticSeverity(rawSeverity) {
+  const normalized = String(rawSeverity || '').trim().toLowerCase();
+  if (normalized === 'info' || normalized === 'warning' || normalized === 'error') {
+    return normalized;
+  }
+  return 'error';
+}
+
+function normalizeDiagnosticLimit(rawLimit) {
+  const parsed = Number.parseInt(String(rawLimit || '20'), 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return 20;
+  }
+  return Math.min(parsed, 100);
+}
+
+function parseDiagnosticContext(rawContext) {
+  if (!rawContext || typeof rawContext !== 'object' || Array.isArray(rawContext)) {
+    return null;
+  }
+
+  try {
+    const serialized = JSON.stringify(rawContext);
+    if (!serialized || serialized === '{}') {
+      return null;
+    }
+    return serialized.slice(0, 8000);
+  } catch (_error) {
+    return null;
+  }
 }
 
 function decodeImagePayload(rawThumbnailUrl) {
@@ -394,4 +436,101 @@ export async function getScannerDashboard(rawQuery) {
     movements,
     ranking
   };
+}
+
+export async function registerScannerDiagnosticEvent(rawPayload, authUser = {}) {
+  const eventType = sanitizeShortText(rawPayload?.eventType, {
+    fallback: 'scanner.unknown',
+    max: 80
+  });
+  const message = sanitizeShortText(rawPayload?.message, {
+    fallback: 'Evento diagnostico sin mensaje',
+    max: 255
+  });
+  const severity = normalizeDiagnosticSeverity(rawPayload?.severity);
+  const sourceApp = sanitizeShortText(rawPayload?.sourceApp, {
+    fallback: 'frontend',
+    max: 40
+  });
+  const sourceLabel = sanitizeShortText(rawPayload?.sourceLabel, {
+    fallback: null,
+    max: 120
+  });
+  const terminalId = sanitizeShortText(rawPayload?.terminalId, {
+    fallback: null,
+    max: 80
+  });
+  const contextJson = parseDiagnosticContext(rawPayload?.context);
+  const userId = Number(authUser?.id || 0) > 0 ? Number(authUser.id) : null;
+  const usernameSnapshot = sanitizeShortText(authUser?.username, {
+    fallback: null,
+    max: 80
+  });
+  const roleSnapshot = sanitizeShortText(authUser?.role, {
+    fallback: null,
+    max: 20
+  });
+
+  const eventId = await createScannerDiagnosticEvent({
+    event_type: eventType,
+    severity,
+    message,
+    user_id: userId,
+    username_snapshot: usernameSnapshot,
+    role_snapshot: roleSnapshot,
+    source_app: sourceApp,
+    source_label: sourceLabel,
+    terminal_id: terminalId,
+    context_json: contextJson
+  });
+
+  return {
+    id: eventId,
+    eventType,
+    severity,
+    message,
+    sourceApp,
+    sourceLabel,
+    terminalId,
+    context: rawPayload?.context && typeof rawPayload.context === 'object' ? rawPayload.context : null,
+    createdAt: new Date().toISOString(),
+    user: {
+      id: userId,
+      username: usernameSnapshot,
+      role: roleSnapshot
+    }
+  };
+}
+
+export async function getScannerDiagnosticEvents(rawLimit) {
+  const limit = normalizeDiagnosticLimit(rawLimit);
+  const rows = await listScannerDiagnosticEvents(limit);
+
+  return rows.map((row) => {
+    let parsedContext = null;
+    if (row?.context_json) {
+      try {
+        parsedContext = JSON.parse(row.context_json);
+      } catch (_error) {
+        parsedContext = null;
+      }
+    }
+
+    return {
+      id: Number(row.id || 0),
+      eventType: String(row.event_type || '').trim(),
+      severity: normalizeDiagnosticSeverity(row.severity),
+      message: String(row.message || '').trim(),
+      sourceApp: String(row.source_app || '').trim() || 'frontend',
+      sourceLabel: String(row.source_label || '').trim() || '',
+      terminalId: String(row.terminal_id || '').trim() || '',
+      createdAt: toCanonicalIsoUtc(row.created_at),
+      context: parsedContext,
+      user: {
+        id: row.user_id ? Number(row.user_id) : null,
+        username: String(row.username_snapshot || '').trim() || '',
+        role: String(row.role_snapshot || '').trim() || ''
+      }
+    };
+  });
 }

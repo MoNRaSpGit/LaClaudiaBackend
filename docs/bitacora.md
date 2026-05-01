@@ -1,5 +1,13 @@
 # Bitacora Backend
 
+## Referencia operativa: version estable
+
+- Si el usuario dice `volvemos a estable`, la referencia base actual de backend es:
+  - `backend origin/main`
+  - commit: `9cab40f`
+  - mensaje: `auth: endpoint session para keepalive frontend`
+- Esta referencia representa la ultima version subida y tomada como estable antes de cambios locales no publicados.
+
 ## Estado actual (2026-04-26)
 
 Backend estable para lookup y listado inicial de productos, conectado a BDD2 (`bwbxqngh9d4wr6bnopb3`) y tabla `clau_prodcutos`.
@@ -23,6 +31,24 @@ Backend estable para lookup y listado inicial de productos, conectado a BDD2 (`b
   - push automatico a clientes al confirmar ventas/pagos.
 
 ## Mini Changelog Tecnico (2026-04-27)
+
+- Telemetria remota de diagnostico scanner (2026-05-01):
+  - nueva tabla `scanner_diagnostic_events` para registrar eventos criticos enviados desde frontend.
+  - nuevo endpoint `POST /api/scanner/diagnostic-events`:
+    - requiere sesion autenticada.
+    - disponible para flujo operativo de scanner.
+    - guarda:
+      - `eventType`
+      - `severity`
+      - `message`
+      - `sourceLabel`
+      - `terminalId`
+      - `context`
+      - snapshot de usuario autenticado
+  - nuevo endpoint `GET /api/scanner/diagnostic-events`:
+    - pensado para lectura admin desde panel de control.
+    - devuelve incidentes recientes ordenados por fecha.
+  - objetivo: tener visibilidad remota de errores reales de locales sin depender de inspeccion manual en la PC del cliente.
 
 - Keepalive autenticado de sesion (2026-05-01):
   - nuevo endpoint `GET /api/auth/session` protegido con `requireAuth`.
@@ -175,6 +201,21 @@ Estamos en etapa de consolidar logica de caja y ventas en frontend, para luego b
 ## En que quedamos
 
 - hacer text manuales   y ver q errores salen
+
+## Paquete local en validacion - eventos de diagnostico scanner
+
+- Se agrego soporte backend para eventos de diagnostico de scanner.
+- Componentes:
+  - tabla `scanner_diagnostic_events`
+  - `POST /api/scanner/diagnostic-events`
+  - `GET /api/scanner/diagnostic-events`
+- Criterio operativo actual:
+  - el backend guarda eventos de soporte remoto del scanner.
+  - la lectura de monitoreo queda restringida a usuario `staff`.
+- Estado de pruebas:
+  - guardado manual: OK.
+  - guardado diferido luego de backend caido: OK, apoyado por cola local de frontend.
+  - normalizacion de hora: corregida para respetar configuracion DB actual (`UTC` en driver).
 
 ## Observaciones
 

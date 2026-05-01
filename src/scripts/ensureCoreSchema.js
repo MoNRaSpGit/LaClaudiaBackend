@@ -145,6 +145,25 @@ async function ensureTables(pool) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
   console.log('[core-schema] tabla scanner_dashboard_daily lista');
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS scanner_diagnostic_events (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      event_type VARCHAR(80) NOT NULL,
+      severity ENUM('info', 'warning', 'error') NOT NULL DEFAULT 'error',
+      message VARCHAR(255) NOT NULL,
+      user_id BIGINT UNSIGNED NULL,
+      username_snapshot VARCHAR(80) NULL,
+      role_snapshot VARCHAR(20) NULL,
+      source_app VARCHAR(40) NOT NULL DEFAULT 'frontend',
+      source_label VARCHAR(120) NULL,
+      terminal_id VARCHAR(80) NULL,
+      context_json LONGTEXT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+  console.log('[core-schema] tabla scanner_diagnostic_events lista');
 }
 
 async function ensureConstraintsAndIndexes(pool) {
@@ -204,6 +223,20 @@ async function ensureConstraintsAndIndexes(pool) {
     `
   );
 
+  await ensureForeignKey(
+    pool,
+    'scanner_diagnostic_events',
+    'fk_scanner_diagnostic_events_user_id',
+    `
+      ALTER TABLE scanner_diagnostic_events
+      ADD CONSTRAINT fk_scanner_diagnostic_events_user_id
+      FOREIGN KEY (user_id)
+      REFERENCES auth_users(id)
+      ON UPDATE CASCADE
+      ON DELETE SET NULL
+    `
+  );
+
   await ensureIndex(pool, 'auth_users', 'ux_auth_users_username', 'ALTER TABLE auth_users ADD UNIQUE INDEX ux_auth_users_username (username)');
   await ensureIndex(pool, 'auth_users', 'idx_auth_users_role_active', 'ALTER TABLE auth_users ADD INDEX idx_auth_users_role_active (role, is_active)');
   await ensureIndex(pool, 'auth_sessions', 'ux_auth_sessions_token_hash', 'ALTER TABLE auth_sessions ADD UNIQUE INDEX ux_auth_sessions_token_hash (token_hash)');
@@ -224,6 +257,9 @@ async function ensureConstraintsAndIndexes(pool) {
   await ensureIndex(pool, 'cash_payments', 'idx_cash_payments_user_created', 'ALTER TABLE cash_payments ADD INDEX idx_cash_payments_user_created (user_id, created_at)');
   await ensureIndex(pool, 'cash_payments', 'idx_cash_payments_status_created', 'ALTER TABLE cash_payments ADD INDEX idx_cash_payments_status_created (status, created_at)');
   await ensureIndex(pool, 'scanner_dashboard_daily', 'idx_scanner_dashboard_daily_updated_at', 'ALTER TABLE scanner_dashboard_daily ADD INDEX idx_scanner_dashboard_daily_updated_at (updated_at)');
+  await ensureIndex(pool, 'scanner_diagnostic_events', 'idx_scanner_diagnostic_events_created_at', 'ALTER TABLE scanner_diagnostic_events ADD INDEX idx_scanner_diagnostic_events_created_at (created_at)');
+  await ensureIndex(pool, 'scanner_diagnostic_events', 'idx_scanner_diagnostic_events_event_type', 'ALTER TABLE scanner_diagnostic_events ADD INDEX idx_scanner_diagnostic_events_event_type (event_type, created_at)');
+  await ensureIndex(pool, 'scanner_diagnostic_events', 'idx_scanner_diagnostic_events_user_created', 'ALTER TABLE scanner_diagnostic_events ADD INDEX idx_scanner_diagnostic_events_user_created (user_id, created_at)');
 }
 
 async function ensureBootstrapAdmin(pool) {

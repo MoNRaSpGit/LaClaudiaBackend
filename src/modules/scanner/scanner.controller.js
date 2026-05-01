@@ -1,8 +1,10 @@
 import {
   createScannerProduct,
+  getScannerDiagnosticEvents,
   getScannerDashboard,
   getScannerProducts,
   lookupProductByBarcode,
+  registerScannerDiagnosticEvent,
   registerScannerPayment,
   registerScannerSale,
   updateScannerDashboardInitialCash,
@@ -168,6 +170,37 @@ export async function scannerUpdateLiveStateController(req, res, next) {
       ok: true
     });
     notifyLiveScannerChanged().catch(() => {});
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerCreateDiagnosticEventController(req, res, next) {
+  try {
+    const event = await registerScannerDiagnosticEvent(req.body || {}, req.auth?.user || {});
+    res.status(202).json({
+      ok: true,
+      event
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerListDiagnosticEventsController(req, res, next) {
+  try {
+    const currentUsername = String(req.auth?.user?.username || '').trim().toLowerCase();
+    if (currentUsername !== 'staff') {
+      const error = new Error('No autorizado para ver monitoreo');
+      error.statusCode = 403;
+      throw error;
+    }
+
+    const events = await getScannerDiagnosticEvents(req.query?.limit);
+    res.json({
+      ok: true,
+      events
+    });
   } catch (error) {
     next(error);
   }

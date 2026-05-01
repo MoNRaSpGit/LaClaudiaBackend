@@ -447,3 +447,64 @@ export async function upsertDashboardInitialCashByDate(dateLabel, initialCash) {
     initial_cash: Number(initialCash || 0)
   };
 }
+
+export async function createScannerDiagnosticEvent(payload) {
+  const pool = getDbPoolOrThrow();
+  const [result] = await pool.query(
+    `
+      INSERT INTO scanner_diagnostic_events (
+        event_type,
+        severity,
+        message,
+        user_id,
+        username_snapshot,
+        role_snapshot,
+        source_app,
+        source_label,
+        terminal_id,
+        context_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      payload.event_type,
+      payload.severity,
+      payload.message,
+      payload.user_id,
+      payload.username_snapshot,
+      payload.role_snapshot,
+      payload.source_app,
+      payload.source_label,
+      payload.terminal_id,
+      payload.context_json
+    ]
+  );
+
+  return Number(result?.insertId || 0);
+}
+
+export async function listScannerDiagnosticEvents(limit) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        id,
+        event_type,
+        severity,
+        message,
+        user_id,
+        username_snapshot,
+        role_snapshot,
+        source_app,
+        source_label,
+        terminal_id,
+        context_json,
+        created_at
+      FROM scanner_diagnostic_events
+      ORDER BY created_at DESC, id DESC
+      LIMIT ?
+    `,
+    [limit]
+  );
+
+  return rows;
+}
