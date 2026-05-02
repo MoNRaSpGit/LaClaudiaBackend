@@ -33,7 +33,7 @@ export async function scannerLookupController(req, res, next) {
 
 export async function scannerListController(req, res, next) {
   try {
-    const data = await getScannerProducts(req.query.limit);
+    const data = await getScannerProducts(req.query.limit, req.query.q);
     res.json({
       ok: true,
       ...data

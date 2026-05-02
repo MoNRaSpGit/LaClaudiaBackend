@@ -32,6 +32,12 @@ Backend estable para lookup y listado inicial de productos, conectado a BDD2 (`b
 
 ## Mini Changelog Tecnico (2026-04-27)
 
+- Busqueda por nombre en catalogo scanner (2026-05-02):
+  - `GET /api/scanner/products` ahora acepta `q`.
+  - filtra por coincidencia parcial en `nombre`.
+  - mantiene `limit`.
+  - objetivo: soportar pagina admin `Productos` del frontend.
+
 - Telemetria remota de diagnostico scanner (2026-05-01):
   - nueva tabla `scanner_diagnostic_events` para registrar eventos criticos enviados desde frontend.
   - nuevo endpoint `POST /api/scanner/diagnostic-events`:

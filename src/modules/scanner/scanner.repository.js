@@ -38,9 +38,34 @@ export async function findProductByBarcode(barcode) {
   return rows[0] || null;
 }
 
-export async function listProducts({ limit }) {
+export async function listProducts({ limit, query }) {
   const pool = getDbPoolOrThrow();
   const tableName = escapeId(env.productsTable);
+  const normalizedQuery = String(query || '').trim();
+
+  if (normalizedQuery) {
+    const [rows] = await pool.query(
+      `
+        SELECT
+          id,
+          nombre,
+          precio_venta,
+          stock_actual,
+          categoria,
+          barcode,
+          barcode_normalized,
+          tiene_imagen,
+          imagen
+        FROM ${tableName}
+        WHERE nombre LIKE ?
+        ORDER BY nombre ASC, id ASC
+        LIMIT ?
+      `,
+      [`%${normalizedQuery}%`, limit]
+    );
+
+    return rows;
+  }
 
   const [rows] = await pool.query(
     `

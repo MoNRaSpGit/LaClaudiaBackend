@@ -23,6 +23,7 @@ import {
   normalizeDashboardParams,
   normalizeDashboardInitialCashPayload,
   normalizeLimit,
+  normalizeProductSearchQuery,
   normalizePaymentPayload,
   normalizeProductCreatePayload,
   normalizeProductUpdatePayload,
@@ -276,9 +277,10 @@ export async function lookupProductByBarcode(rawBarcode) {
   return toScannerProduct(product);
 }
 
-export async function getScannerProducts(rawLimit) {
+export async function getScannerProducts(rawLimit, rawQuery) {
   const limit = normalizeLimit(rawLimit);
-  const items = await listProducts({ limit });
+  const query = normalizeProductSearchQuery(rawQuery);
+  const items = await listProducts({ limit, query });
   return {
     count: items.length,
     items: items.map(toScannerProduct)

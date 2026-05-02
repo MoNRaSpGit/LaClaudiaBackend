@@ -12,6 +12,10 @@ export function normalizeLimit(rawLimit) {
   return Math.max(1, Math.min(50, Math.floor(parsed)));
 }
 
+export function normalizeProductSearchQuery(rawQuery) {
+  return String(rawQuery || '').trim().slice(0, 80);
+}
+
 export function escapeId(identifier) {
   return `\`${String(identifier).replace(/`/g, '``')}\``;
 }

@@ -80,6 +80,7 @@ Responsabilidad:
 ### Scanner / ventas
 
 - `GET /api/scanner/products`
+  - soporta `limit` y `q` para busqueda por nombre
 - `GET /api/scanner/products/lookup`
 - `PUT /api/scanner/products/:id`
 - `POST /api/scanner/live-state`
