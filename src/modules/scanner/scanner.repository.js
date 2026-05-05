@@ -533,3 +533,138 @@ export async function listScannerDiagnosticEvents(limit) {
 
   return rows;
 }
+
+export async function createStockRequest(payload) {
+  const pool = getDbPoolOrThrow();
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const [requestResult] = await connection.query(
+      `
+        INSERT INTO stock_requests (
+          provider_name,
+          requested_by_user_id,
+          requested_by_label,
+          status
+        ) VALUES (?, ?, ?, 'pending')
+      `,
+      [
+        payload.provider_name,
+        payload.requested_by_user_id,
+        payload.requested_by_label
+      ]
+    );
+
+    const requestId = Number(requestResult?.insertId || 0);
+    const itemPlaceholders = payload.items.map(() => '(?, ?, ?)').join(', ');
+    const itemValues = payload.items.flatMap((item) => [
+      requestId,
+      item.product_name,
+      item.quantity
+    ]);
+
+    await connection.query(
+      `
+        INSERT INTO stock_request_items (
+          request_id,
+          product_name,
+          quantity
+        ) VALUES ${itemPlaceholders}
+      `,
+      itemValues
+    );
+
+    await connection.commit();
+    return requestId;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function listStockRequests({ requestedByUserId = null, status = 'pending' } = {}) {
+  const pool = getDbPoolOrThrow();
+  const params = [];
+  const where = [];
+
+  if (status) {
+    where.push('sr.status = ?');
+    params.push(status);
+  }
+
+  if (requestedByUserId != null) {
+    where.push('sr.requested_by_user_id = ?');
+    params.push(requestedByUserId);
+  }
+
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const [rows] = await pool.query(
+    `
+      SELECT
+        sr.id,
+        sr.provider_name,
+        sr.requested_by_user_id,
+        sr.requested_by_label,
+        sr.status,
+        sr.resolved_by_user_id,
+        sr.resolved_at,
+        sr.created_at,
+        sri.id AS item_id,
+        sri.product_name,
+        sri.quantity
+      FROM stock_requests sr
+      LEFT JOIN stock_request_items sri ON sri.request_id = sr.id
+      ${whereSql}
+      ORDER BY sr.created_at DESC, sri.id ASC
+    `,
+    params
+  );
+
+  return rows;
+}
+
+export async function findStockRequestById(requestId) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        id,
+        provider_name,
+        requested_by_user_id,
+        requested_by_label,
+        status,
+        resolved_by_user_id,
+        resolved_at,
+        created_at
+      FROM stock_requests
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [requestId]
+  );
+
+  return rows[0] || null;
+}
+
+export async function markStockRequestResolved(requestId, resolvedByUserId) {
+  const pool = getDbPoolOrThrow();
+  const [result] = await pool.query(
+    `
+      UPDATE stock_requests
+      SET
+        status = 'resolved',
+        resolved_by_user_id = ?,
+        resolved_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+        AND status = 'pending'
+      LIMIT 1
+    `,
+    [resolvedByUserId, requestId]
+  );
+
+  return Number(result?.affectedRows || 0);
+}

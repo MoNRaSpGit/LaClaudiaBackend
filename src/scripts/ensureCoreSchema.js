@@ -164,6 +164,34 @@ async function ensureTables(pool) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
   console.log('[core-schema] tabla scanner_diagnostic_events lista');
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS stock_requests (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      provider_name VARCHAR(180) NOT NULL,
+      requested_by_user_id BIGINT UNSIGNED NOT NULL,
+      requested_by_label VARCHAR(120) NOT NULL,
+      status ENUM('pending', 'resolved') NOT NULL DEFAULT 'pending',
+      resolved_by_user_id BIGINT UNSIGNED NULL,
+      resolved_at DATETIME NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+  console.log('[core-schema] tabla stock_requests lista');
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS stock_request_items (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      request_id BIGINT UNSIGNED NOT NULL,
+      product_name VARCHAR(180) NOT NULL,
+      quantity INT UNSIGNED NOT NULL DEFAULT 1,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+  console.log('[core-schema] tabla stock_request_items lista');
 }
 
 async function ensureConstraintsAndIndexes(pool) {
@@ -237,6 +265,48 @@ async function ensureConstraintsAndIndexes(pool) {
     `
   );
 
+  await ensureForeignKey(
+    pool,
+    'stock_requests',
+    'fk_stock_requests_requested_by_user_id',
+    `
+      ALTER TABLE stock_requests
+      ADD CONSTRAINT fk_stock_requests_requested_by_user_id
+      FOREIGN KEY (requested_by_user_id)
+      REFERENCES auth_users(id)
+      ON UPDATE CASCADE
+      ON DELETE RESTRICT
+    `
+  );
+
+  await ensureForeignKey(
+    pool,
+    'stock_requests',
+    'fk_stock_requests_resolved_by_user_id',
+    `
+      ALTER TABLE stock_requests
+      ADD CONSTRAINT fk_stock_requests_resolved_by_user_id
+      FOREIGN KEY (resolved_by_user_id)
+      REFERENCES auth_users(id)
+      ON UPDATE CASCADE
+      ON DELETE SET NULL
+    `
+  );
+
+  await ensureForeignKey(
+    pool,
+    'stock_request_items',
+    'fk_stock_request_items_request_id',
+    `
+      ALTER TABLE stock_request_items
+      ADD CONSTRAINT fk_stock_request_items_request_id
+      FOREIGN KEY (request_id)
+      REFERENCES stock_requests(id)
+      ON UPDATE CASCADE
+      ON DELETE CASCADE
+    `
+  );
+
   await ensureIndex(pool, 'auth_users', 'ux_auth_users_username', 'ALTER TABLE auth_users ADD UNIQUE INDEX ux_auth_users_username (username)');
   await ensureIndex(pool, 'auth_users', 'idx_auth_users_role_active', 'ALTER TABLE auth_users ADD INDEX idx_auth_users_role_active (role, is_active)');
   await ensureIndex(pool, 'auth_sessions', 'ux_auth_sessions_token_hash', 'ALTER TABLE auth_sessions ADD UNIQUE INDEX ux_auth_sessions_token_hash (token_hash)');
@@ -260,6 +330,9 @@ async function ensureConstraintsAndIndexes(pool) {
   await ensureIndex(pool, 'scanner_diagnostic_events', 'idx_scanner_diagnostic_events_created_at', 'ALTER TABLE scanner_diagnostic_events ADD INDEX idx_scanner_diagnostic_events_created_at (created_at)');
   await ensureIndex(pool, 'scanner_diagnostic_events', 'idx_scanner_diagnostic_events_event_type', 'ALTER TABLE scanner_diagnostic_events ADD INDEX idx_scanner_diagnostic_events_event_type (event_type, created_at)');
   await ensureIndex(pool, 'scanner_diagnostic_events', 'idx_scanner_diagnostic_events_user_created', 'ALTER TABLE scanner_diagnostic_events ADD INDEX idx_scanner_diagnostic_events_user_created (user_id, created_at)');
+  await ensureIndex(pool, 'stock_requests', 'idx_stock_requests_status_created', 'ALTER TABLE stock_requests ADD INDEX idx_stock_requests_status_created (status, created_at)');
+  await ensureIndex(pool, 'stock_requests', 'idx_stock_requests_requested_by_status', 'ALTER TABLE stock_requests ADD INDEX idx_stock_requests_requested_by_status (requested_by_user_id, status, created_at)');
+  await ensureIndex(pool, 'stock_request_items', 'idx_stock_request_items_request_id', 'ALTER TABLE stock_request_items ADD INDEX idx_stock_request_items_request_id (request_id)');
 }
 
 async function ensureBootstrapAdmin(pool) {

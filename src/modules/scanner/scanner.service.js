@@ -3,16 +3,20 @@ import {
   createCashPayment,
   createScannerDiagnosticEvent,
   createSaleTicket,
+  createStockRequest,
+  findStockRequestById,
   findProductById,
   findProductByBarcode,
   getDashboardInitialCashByDate,
   getBestSalesDayTotal,
   listScannerDiagnosticEvents,
+  listStockRequests,
   listPaymentMovementsBetween,
   listProducts,
   listRankingBetween,
   listSaleItemsBySaleIds,
   listSalesMovementsBetween,
+  markStockRequestResolved,
   sumConfirmedPaymentsBetween,
   sumConfirmedSalesBetween,
   upsertDashboardInitialCashByDate,
@@ -27,7 +31,8 @@ import {
   normalizePaymentPayload,
   normalizeProductCreatePayload,
   normalizeProductUpdatePayload,
-  normalizeSalePayload
+  normalizeSalePayload,
+  normalizeStockRequestPayload
 } from './scanner.model.js';
 
 function resolveThumbnailUrl(rawImage) {
@@ -259,6 +264,45 @@ function aggregateRankingRows(rows) {
     .sort((a, b) => b.qty - a.qty);
 }
 
+function toCanonicalStockRequests(rows) {
+  const byId = new Map();
+
+  rows.forEach((row) => {
+    const requestId = Number(row?.id || 0);
+    if (!requestId) {
+      return;
+    }
+
+    let current = byId.get(requestId);
+    if (!current) {
+      current = {
+        id: `stock-${requestId}`,
+        requestId,
+        provider: String(row?.provider_name || '').trim(),
+        requestedBy: String(row?.requested_by_label || '').trim(),
+        requestedByUserId: Number(row?.requested_by_user_id || 0) || null,
+        status: String(row?.status || 'pending').trim() || 'pending',
+        resolvedByUserId: Number(row?.resolved_by_user_id || 0) || null,
+        resolvedAt: toCanonicalIsoUtc(row?.resolved_at),
+        createdAt: toCanonicalIsoUtc(row?.created_at),
+        items: []
+      };
+      byId.set(requestId, current);
+    }
+
+    const productName = String(row?.product_name || '').trim();
+    const quantity = Number(row?.quantity || 0);
+    if (productName && quantity > 0) {
+      current.items.push({
+        name: productName,
+        quantity
+      });
+    }
+  });
+
+  return Array.from(byId.values());
+}
+
 export async function lookupProductByBarcode(rawBarcode) {
   const barcode = normalizeBarcode(rawBarcode);
   if (!barcode) {
@@ -437,6 +481,94 @@ export async function getScannerDashboard(rawQuery) {
     comparison,
     movements,
     ranking
+  };
+}
+
+export async function getScannerTopSellingRanking(rawQuery) {
+  const params = normalizeDashboardParams(rawQuery);
+  const rankingRows = await listRankingBetween(params.dayStart, params.dayEnd, params.rankingLimit);
+
+  return {
+    date: params.dateLabel,
+    ranking: aggregateRankingRows(rankingRows)
+  };
+}
+
+export async function createUserStockRequest(rawPayload, authUser = {}) {
+  const normalized = normalizeStockRequestPayload(rawPayload, authUser);
+  const requestId = await createStockRequest(normalized);
+  const rows = await listStockRequests({ status: null });
+  const requests = toCanonicalStockRequests(rows);
+  const created = requests.find((item) => item.requestId === requestId);
+
+  if (!created) {
+    const error = new Error('No se pudo recuperar el pedido creado');
+    error.statusCode = 500;
+    throw error;
+  }
+
+  return created;
+}
+
+export async function getUserStockRequests(authUser = {}) {
+  const userRole = String(authUser?.role || '').trim().toLowerCase();
+  const userId = Number(authUser?.id || 0);
+
+  if (!userId) {
+    const error = new Error('usuario autenticado invalido');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const rows = await listStockRequests({
+    requestedByUserId: userRole === 'admin' ? null : userId,
+    status: 'pending'
+  });
+
+  return toCanonicalStockRequests(rows);
+}
+
+export async function resolveUserStockRequest(rawRequestId, authUser = {}) {
+  const requestId = Number(rawRequestId);
+  const userId = Number(authUser?.id || 0);
+  const userRole = String(authUser?.role || '').trim().toLowerCase();
+
+  if (!Number.isInteger(requestId) || requestId <= 0) {
+    const error = new Error('requestId invalido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!userId) {
+    const error = new Error('usuario autenticado invalido');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const request = await findStockRequestById(requestId);
+  if (!request) {
+    const error = new Error('Pedido de stock no encontrado');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (String(request.status || '').trim().toLowerCase() !== 'pending') {
+    const error = new Error('El pedido ya fue cerrado');
+    error.statusCode = 409;
+    throw error;
+  }
+
+  if (userRole !== 'admin' && Number(request.requested_by_user_id || 0) !== userId) {
+    const error = new Error('No autorizado para cerrar este pedido');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  await markStockRequestResolved(requestId, userId);
+
+  return {
+    ok: true,
+    requestId
   };
 }
 

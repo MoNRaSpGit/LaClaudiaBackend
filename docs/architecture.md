@@ -19,6 +19,15 @@
 - `auth`: login por usuario/clave (fase inicial).
 - `scanner`: lookup/listado de productos + confirmacion de venta.
 - `scanner.stream`: capa de stream en tiempo real (SSE) para dashboard.
+- `stock requests`:
+  - resuelto dentro del modulo `scanner` para no abrir otro bounded context todavia.
+  - endpoints:
+    - `POST /api/scanner/stock-requests`
+    - `GET /api/scanner/stock-requests`
+    - `PUT /api/scanner/stock-requests/:id/resolve`
+  - persistencia:
+    - `stock_requests`
+    - `stock_request_items`
 - `scripts`: preparacion idempotente de esquema e indices DB.
 
 ## Auth (sesiones)

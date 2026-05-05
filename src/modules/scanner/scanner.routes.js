@@ -6,11 +6,15 @@ import {
   scannerCreateProductController,
   scannerCreatePaymentController,
   scannerCreateSaleController,
+  scannerCreateStockRequestController,
   scannerDashboardController,
   scannerDashboardStreamController,
   scannerListDiagnosticEventsController,
   scannerListController,
+  scannerListStockRequestsController,
   scannerLookupController,
+  scannerResolveStockRequestController,
+  scannerTopSellingRankingController,
   scannerUpdateDashboardInitialCashController,
   scannerUpdateProductController,
   scannerUpdateLiveStateController
@@ -26,6 +30,10 @@ router.put('/products/:id', requirePermission(PERMISSIONS.SCANNER_PRODUCT_UPDATE
 router.post('/live-state', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerUpdateLiveStateController);
 router.post('/sales', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerCreateSaleController);
 router.post('/diagnostic-events', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerCreateDiagnosticEventController);
+router.post('/stock-requests', requirePermission(PERMISSIONS.STOCK_REQUEST_CREATE), scannerCreateStockRequestController);
+router.get('/stock-requests', requirePermission(PERMISSIONS.STOCK_REQUEST_READ), scannerListStockRequestsController);
+router.put('/stock-requests/:id/resolve', requirePermission(PERMISSIONS.STOCK_REQUEST_RESOLVE), scannerResolveStockRequestController);
+router.get('/dashboard/ranking', requirePermission(PERMISSIONS.SCANNER_RANKING_READ), scannerTopSellingRankingController);
 router.get('/dashboard', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_READ), scannerDashboardController);
 router.get('/dashboard/stream', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_READ), scannerDashboardStreamController);
 router.get('/diagnostic-events', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_READ), scannerListDiagnosticEventsController);

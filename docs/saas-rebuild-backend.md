@@ -89,9 +89,16 @@ Responsabilidad:
 ### Panel / caja
 
 - `GET /api/scanner/dashboard`
+- `GET /api/scanner/dashboard/ranking`
 - `GET /api/scanner/dashboard/stream`
 - `PUT /api/scanner/dashboard/initial-cash`
 - `POST /api/scanner/payments`
+
+### Stock
+
+- `POST /api/scanner/stock-requests`
+- `GET /api/scanner/stock-requests`
+- `PUT /api/scanner/stock-requests/:id/resolve`
 
 ## Roles y permisos actuales
 
@@ -104,6 +111,10 @@ Permisos:
 - `scanner.product.update`
 - `scanner.lookup.read`
 - `scanner.sale.create`
+- `scanner.ranking.read`
+- `stock.request.create`
+- `stock.request.read`
+- `stock.request.resolve`
 - `scanner.dashboard.read`
 - `scanner.payment.create`
 - `scanner.dashboard.update`

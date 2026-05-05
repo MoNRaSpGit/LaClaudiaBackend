@@ -1,12 +1,16 @@
 import {
   createScannerProduct,
+  createUserStockRequest,
   getScannerDiagnosticEvents,
   getScannerDashboard,
+  getScannerTopSellingRanking,
   getScannerProducts,
+  getUserStockRequests,
   lookupProductByBarcode,
   registerScannerDiagnosticEvent,
   registerScannerPayment,
   registerScannerSale,
+  resolveUserStockRequest,
   updateScannerDashboardInitialCash,
   updateScannerProduct
 } from './scanner.service.js';
@@ -119,6 +123,54 @@ export async function scannerDashboardController(req, res, next) {
     res.json({
       ok: true,
       dashboard
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerTopSellingRankingController(req, res, next) {
+  try {
+    const ranking = await getScannerTopSellingRanking(req.query || {});
+    res.json({
+      ok: true,
+      ...ranking
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerCreateStockRequestController(req, res, next) {
+  try {
+    const request = await createUserStockRequest(req.body || {}, req.auth?.user || {});
+    res.status(201).json({
+      ok: true,
+      request
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerListStockRequestsController(req, res, next) {
+  try {
+    const requests = await getUserStockRequests(req.auth?.user || {});
+    res.json({
+      ok: true,
+      requests
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerResolveStockRequestController(req, res, next) {
+  try {
+    const result = await resolveUserStockRequest(req.params.id, req.auth?.user || {});
+    res.json({
+      ok: true,
+      ...result
     });
   } catch (error) {
     next(error);

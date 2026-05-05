@@ -14,6 +14,16 @@ describe('roleHasPermission', () => {
     expect(roleHasPermission(ROLES.OPERARIO, PERMISSIONS.SCANNER_PAYMENT_CREATE)).toBe(true);
   });
 
+  it('allows operario ranking read permission', () => {
+    expect(roleHasPermission(ROLES.OPERARIO, PERMISSIONS.SCANNER_RANKING_READ)).toBe(true);
+  });
+
+  it('allows operario stock request permissions', () => {
+    expect(roleHasPermission(ROLES.OPERARIO, PERMISSIONS.STOCK_REQUEST_CREATE)).toBe(true);
+    expect(roleHasPermission(ROLES.OPERARIO, PERMISSIONS.STOCK_REQUEST_READ)).toBe(true);
+    expect(roleHasPermission(ROLES.OPERARIO, PERMISSIONS.STOCK_REQUEST_RESOLVE)).toBe(true);
+  });
+
   it('is resilient to unknown roles or permissions', () => {
     expect(roleHasPermission('guest', PERMISSIONS.SCANNER_DASHBOARD_READ)).toBe(false);
     expect(roleHasPermission(ROLES.ADMIN, '')).toBe(false);

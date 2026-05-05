@@ -32,6 +32,31 @@ Backend estable para lookup y listado inicial de productos, conectado a BDD2 (`b
 
 ## Mini Changelog Tecnico (2026-04-27)
 
+- Stock requests persistentes + ranking acotado (2026-05-05):
+  - nuevo soporte backend para pedidos de stock reales entre operario y admin.
+  - nuevas tablas:
+    - `stock_requests`
+    - `stock_request_items`
+  - nuevos endpoints:
+    - `POST /api/scanner/stock-requests`
+    - `GET /api/scanner/stock-requests`
+    - `PUT /api/scanner/stock-requests/:id/resolve`
+  - criterio actual:
+    - `admin` ve todos los pedidos pendientes.
+    - `operario` ve solo sus propios pendientes.
+    - el cierre de pedido queda permitido para quien lo creo y para `admin`.
+  - se agrego endpoint acotado de ranking:
+    - `GET /api/scanner/dashboard/ranking`
+    - objetivo: exponer `+Vendidos` sin abrir todo `dashboard.read` al operario.
+  - permisos nuevos:
+    - `scanner.ranking.read`
+    - `stock.request.create`
+    - `stock.request.read`
+    - `stock.request.resolve`
+  - validacion tecnica:
+    - `npm test -- --run` OK.
+    - `npm run db:prepare:core` OK.
+
 - Busqueda por nombre en catalogo scanner (2026-05-02):
   - `GET /api/scanner/products` ahora acepta `q`.
   - filtra por coincidencia parcial en `nombre`.
