@@ -90,8 +90,31 @@ function addMonthsToMonthKey(monthKey, delta) {
   return `${String(date.getUTCFullYear()).padStart(4, '0')}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
-function getWeekNumberInMonth(day) {
-  return Math.min(5, Math.floor((Math.max(1, Number(day || 1)) - 1) / 7) + 1);
+function parseDateLabelToUtc(dateLabel) {
+  const [year, month, day] = String(dateLabel || '').split('-').map((value) => Number(value));
+  return new Date(Date.UTC(year, (month || 1) - 1, day || 1, 0, 0, 0));
+}
+
+function toDateLabelUtc(date) {
+  return [
+    String(date.getUTCFullYear()).padStart(4, '0'),
+    String(date.getUTCMonth() + 1).padStart(2, '0'),
+    String(date.getUTCDate()).padStart(2, '0')
+  ].join('-');
+}
+
+function shiftUtcDateLabel(dateLabel, deltaDays) {
+  const date = parseDateLabelToUtc(dateLabel);
+  date.setUTCDate(date.getUTCDate() + Number(deltaDays || 0));
+  return toDateLabelUtc(date);
+}
+
+function getWeekStartLabel(dateLabel) {
+  const date = parseDateLabelToUtc(dateLabel);
+  const weekday = date.getUTCDay();
+  const deltaToMonday = weekday === 0 ? -6 : 1 - weekday;
+  date.setUTCDate(date.getUTCDate() + deltaToMonday);
+  return toDateLabelUtc(date);
 }
 
 function formatMonthLabel(monthKey) {
@@ -120,47 +143,53 @@ function buildMonthlyWeeksFromDays(monthKey, daysMap, profitRate, weekOverridesM
   const weekMap = new Map();
 
   matchingDays.forEach((dayEntry) => {
-    const weekNumber = getWeekNumberInMonth(dayEntry.day);
-    const current = weekMap.get(weekNumber) || {
-      weekNumber,
-      label: `Semana ${weekNumber}`,
+    const weekStartLabel = getWeekStartLabel(dayEntry.dateLabel);
+    const current = weekMap.get(weekStartLabel) || {
+      weekStartLabel,
       salesTotal: 0,
       paymentsTotal: 0,
       initialCashTotal: 0,
       daysCount: 0,
-      startDate: dayEntry.dateLabel,
-      endDate: dayEntry.dateLabel,
-      days: []
+      startDate: weekStartLabel,
+      endDate: shiftUtcDateLabel(weekStartLabel, 6)
     };
 
     current.salesTotal += dayEntry.salesTotal;
     current.paymentsTotal += dayEntry.paymentsTotal;
     current.initialCashTotal += dayEntry.initialCash;
     current.daysCount += 1;
-    current.endDate = dayEntry.dateLabel;
-    current.days.push({
-      dateLabel: dayEntry.dateLabel,
-      weekdayLabel: dayEntry.weekdayLabel,
-      salesTotal: roundMoney(dayEntry.salesTotal),
-      paymentsTotal: roundMoney(dayEntry.paymentsTotal),
-      initialCash: roundMoney(dayEntry.initialCash),
-      currentAmount: roundMoney(dayEntry.initialCash + dayEntry.salesTotal - dayEntry.paymentsTotal)
-    });
-
-    weekMap.set(weekNumber, current);
+    weekMap.set(weekStartLabel, current);
   });
 
   return Array.from(weekMap.values())
-    .sort((left, right) => left.weekNumber - right.weekNumber)
-    .map((week) => {
-      const overrideKey = `${monthKey}::${week.weekNumber}`;
-      const override = weekOverridesMap.get(overrideKey) || null;
+    .sort((left, right) => left.weekStartLabel.localeCompare(right.weekStartLabel))
+    .map((week, index) => {
+      const weekNumber = index + 1;
+      const days = Array.from({ length: 7 }, (_unused, dayIndex) => {
+        const dateLabel = shiftUtcDateLabel(week.weekStartLabel, dayIndex);
+        const dayEntry = daysMap.get(dateLabel);
+        const dayMonthKey = String(dateLabel).slice(0, 7);
+        return {
+          dateLabel,
+          weekdayLabel: new Intl.DateTimeFormat('es-UY', {
+            weekday: 'long',
+            timeZone: 'UTC'
+          }).format(parseDateLabelToUtc(dateLabel)),
+          salesTotal: roundMoney(dayEntry?.salesTotal || 0),
+          paymentsTotal: roundMoney(dayEntry?.paymentsTotal || 0),
+          initialCash: roundMoney(dayEntry?.initialCash || 0),
+          currentAmount: roundMoney((dayEntry?.initialCash || 0) + (dayEntry?.salesTotal || 0) - (dayEntry?.paymentsTotal || 0)),
+          isOutsideMonth: dayMonthKey !== monthKey
+        };
+      });
+      const overrideKeyResolved = `${monthKey}::${weekNumber}`;
+      const override = weekOverridesMap.get(overrideKeyResolved) || null;
       const effectiveSalesTotal = override ? Number(override.sales_total || 0) : week.salesTotal;
       const effectivePaymentsTotal = override ? Number(override.payments_total || 0) : week.paymentsTotal;
 
       return {
-        weekNumber: week.weekNumber,
-        label: week.label,
+        weekNumber,
+        label: `Semana ${weekNumber}`,
         rangeLabel: `${formatShortDateLabel(week.startDate)} - ${formatShortDateLabel(week.endDate)}`,
         salesTotal: roundMoney(effectiveSalesTotal),
         profitTotal: roundMoney(effectiveSalesTotal * profitRate),
@@ -168,7 +197,7 @@ function buildMonthlyWeeksFromDays(monthKey, daysMap, profitRate, weekOverridesM
         initialCashTotal: roundMoney(week.initialCashTotal),
         currentAmount: roundMoney(week.initialCashTotal + effectiveSalesTotal - effectivePaymentsTotal),
         daysCount: week.daysCount,
-        days: week.days,
+        days,
         isOverridden: Boolean(override),
         overrideNote: String(override?.note || '').trim() || '',
         overrideUpdatedAt: override?.updated_at ? toCanonicalIsoUtc(override.updated_at) : null,

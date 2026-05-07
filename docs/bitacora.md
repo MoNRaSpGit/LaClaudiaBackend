@@ -293,3 +293,8 @@ Estamos en etapa de consolidar logica de caja y ventas en frontend, para luego b
 - Cuellos de botella esperables en este tier:
   - limite de conexiones MySQL (`15`).
   - CPU/RAM del backend (`0.5 CPU / 512 MB`).
+
+## Redeploy operativo - semanas completas en Meses
+
+- Se fuerza nuevo deploy de backend para publicar el armado semanal completo `lunes -> domingo` en `Meses`.
+- Los dias sin movimiento deben salir con `0` en lugar de omitirlos.
