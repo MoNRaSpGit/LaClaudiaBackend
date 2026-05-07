@@ -147,6 +147,20 @@ async function ensureTables(pool) {
   console.log('[core-schema] tabla scanner_dashboard_daily lista');
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS scanner_monthly_week_overrides (
+      month_key CHAR(7) NOT NULL,
+      week_number TINYINT UNSIGNED NOT NULL,
+      sales_total DECIMAL(12,2) NOT NULL DEFAULT 0,
+      payments_total DECIMAL(12,2) NOT NULL DEFAULT 0,
+      note VARCHAR(255) NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (month_key, week_number)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+  console.log('[core-schema] tabla scanner_monthly_week_overrides lista');
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS scanner_diagnostic_events (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       event_type VARCHAR(80) NOT NULL,
@@ -327,6 +341,7 @@ async function ensureConstraintsAndIndexes(pool) {
   await ensureIndex(pool, 'cash_payments', 'idx_cash_payments_user_created', 'ALTER TABLE cash_payments ADD INDEX idx_cash_payments_user_created (user_id, created_at)');
   await ensureIndex(pool, 'cash_payments', 'idx_cash_payments_status_created', 'ALTER TABLE cash_payments ADD INDEX idx_cash_payments_status_created (status, created_at)');
   await ensureIndex(pool, 'scanner_dashboard_daily', 'idx_scanner_dashboard_daily_updated_at', 'ALTER TABLE scanner_dashboard_daily ADD INDEX idx_scanner_dashboard_daily_updated_at (updated_at)');
+  await ensureIndex(pool, 'scanner_monthly_week_overrides', 'idx_scanner_monthly_week_overrides_updated_at', 'ALTER TABLE scanner_monthly_week_overrides ADD INDEX idx_scanner_monthly_week_overrides_updated_at (updated_at)');
   await ensureIndex(pool, 'scanner_diagnostic_events', 'idx_scanner_diagnostic_events_created_at', 'ALTER TABLE scanner_diagnostic_events ADD INDEX idx_scanner_diagnostic_events_created_at (created_at)');
   await ensureIndex(pool, 'scanner_diagnostic_events', 'idx_scanner_diagnostic_events_event_type', 'ALTER TABLE scanner_diagnostic_events ADD INDEX idx_scanner_diagnostic_events_event_type (event_type, created_at)');
   await ensureIndex(pool, 'scanner_diagnostic_events', 'idx_scanner_diagnostic_events_user_created', 'ALTER TABLE scanner_diagnostic_events ADD INDEX idx_scanner_diagnostic_events_user_created (user_id, created_at)');

@@ -453,6 +453,125 @@ export async function getDashboardInitialCashByDate(dateLabel) {
   return rows[0] ? Number(rows[0].initial_cash || 0) : 0;
 }
 
+export async function listDailySalesTotalsBetween(startDate, endDate) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        DATE(CONVERT_TZ(created_at, '+00:00', '-03:00')) AS business_date,
+        COALESCE(SUM(total_amount), 0) AS total
+      FROM sales_tickets
+      WHERE status = 'confirmed'
+        AND created_at >= ?
+        AND created_at < ?
+      GROUP BY DATE(CONVERT_TZ(created_at, '+00:00', '-03:00'))
+      ORDER BY business_date DESC
+    `,
+    [startDate, endDate]
+  );
+
+  return rows;
+}
+
+export async function listDailyPaymentTotalsBetween(startDate, endDate) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        DATE(CONVERT_TZ(created_at, '+00:00', '-03:00')) AS business_date,
+        COALESCE(SUM(amount), 0) AS total
+      FROM cash_payments
+      WHERE status = 'confirmed'
+        AND created_at >= ?
+        AND created_at < ?
+      GROUP BY DATE(CONVERT_TZ(created_at, '+00:00', '-03:00'))
+      ORDER BY business_date DESC
+    `,
+    [startDate, endDate]
+  );
+
+  return rows;
+}
+
+export async function listDashboardInitialCashBetween(startDateLabel, endDateLabelExclusive) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        business_date,
+        initial_cash
+      FROM scanner_dashboard_daily
+      WHERE business_date >= ?
+        AND business_date < ?
+      ORDER BY business_date DESC
+    `,
+    [startDateLabel, endDateLabelExclusive]
+  );
+
+  return rows;
+}
+
+export async function listMonthlyWeekOverridesBetween(startMonthKey, endMonthKeyInclusive) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        month_key,
+        week_number,
+        sales_total,
+        payments_total,
+        note,
+        updated_at
+      FROM scanner_monthly_week_overrides
+      WHERE month_key >= ?
+        AND month_key <= ?
+      ORDER BY month_key DESC, week_number ASC
+    `,
+    [startMonthKey, endMonthKeyInclusive]
+  );
+
+  return rows;
+}
+
+export async function upsertMonthlyWeekOverride({ monthKey, weekNumber, salesTotal, paymentsTotal, note }) {
+  const pool = getDbPoolOrThrow();
+  await pool.query(
+    `
+      INSERT INTO scanner_monthly_week_overrides (
+        month_key,
+        week_number,
+        sales_total,
+        payments_total,
+        note
+      ) VALUES (?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        sales_total = VALUES(sales_total),
+        payments_total = VALUES(payments_total),
+        note = VALUES(note)
+    `,
+    [monthKey, weekNumber, salesTotal, paymentsTotal, note]
+  );
+
+  const [rows] = await pool.query(
+    `
+      SELECT
+        month_key,
+        week_number,
+        sales_total,
+        payments_total,
+        note,
+        updated_at
+      FROM scanner_monthly_week_overrides
+      WHERE month_key = ?
+        AND week_number = ?
+      LIMIT 1
+    `,
+    [monthKey, weekNumber]
+  );
+
+  return rows[0] || null;
+}
+
 export async function upsertDashboardInitialCashByDate(dateLabel, initialCash) {
   const pool = getDbPoolOrThrow();
   await pool.query(

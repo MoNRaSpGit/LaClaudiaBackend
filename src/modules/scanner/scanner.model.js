@@ -345,6 +345,66 @@ export function normalizeDashboardInitialCashPayload(rawPayload, rawQuery) {
   };
 }
 
+export function normalizeMonthlySummaryParams(rawQuery) {
+  const query = rawQuery || {};
+  const limitMonths = normalizeIntegerRange(query.limitMonths, 24, 1, 60);
+  const currentDateLabel = getStoreTodayDateLabel();
+  const [currentYear, currentMonth] = currentDateLabel.split('-').map((value) => Number(value));
+  const monthStartUtc = getUtcDateForStoreDateTime(currentYear, currentMonth, 1, 0, 0, 0);
+  const rangeStartUtc = new Date(monthStartUtc);
+  rangeStartUtc.setUTCMonth(rangeStartUtc.getUTCMonth() - (limitMonths - 1));
+  const nextMonthUtc = new Date(monthStartUtc);
+  nextMonthUtc.setUTCMonth(nextMonthUtc.getUTCMonth() + 1);
+
+  return {
+    limitMonths,
+    rangeStart: toMySqlDateTimeUtc(rangeStartUtc),
+    rangeEnd: toMySqlDateTimeUtc(nextMonthUtc),
+    currentMonthKey: `${String(currentYear).padStart(4, '0')}-${String(currentMonth).padStart(2, '0')}`
+  };
+}
+
+export function normalizeMonthlyWeekOverridePayload(rawPayload) {
+  const payload = rawPayload || {};
+  const monthKey = String(payload.monthKey || '').trim();
+  const weekNumber = Number(payload.weekNumber);
+  const salesTotal = Number(payload.salesTotal);
+  const paymentsTotal = Number(payload.paymentsTotal);
+  const note = String(payload.note || '').trim().slice(0, 255);
+
+  if (!/^\d{4}-\d{2}$/.test(monthKey)) {
+    const error = new Error('monthKey invalido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!Number.isInteger(weekNumber) || weekNumber < 1 || weekNumber > 5) {
+    const error = new Error('weekNumber invalido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!Number.isFinite(salesTotal) || salesTotal < 0 || salesTotal > 1000000000) {
+    const error = new Error('salesTotal invalido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!Number.isFinite(paymentsTotal) || paymentsTotal < 0 || paymentsTotal > 1000000000) {
+    const error = new Error('paymentsTotal invalido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    monthKey,
+    weekNumber,
+    salesTotal: Number(salesTotal.toFixed(2)),
+    paymentsTotal: Number(paymentsTotal.toFixed(2)),
+    note: note || null
+  };
+}
+
 export function normalizeProductUpdatePayload(rawProductId, rawPayload) {
   const productId = normalizeRequiredInteger(rawProductId);
   if (productId === null) {

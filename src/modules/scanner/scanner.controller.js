@@ -3,6 +3,7 @@ import {
   createUserStockRequest,
   getScannerDiagnosticEvents,
   getScannerDashboard,
+  getScannerMonthlySummary,
   getScannerTopSellingRanking,
   getScannerProducts,
   getUserStockRequests,
@@ -11,6 +12,7 @@ import {
   registerScannerPayment,
   registerScannerSale,
   resolveUserStockRequest,
+  updateScannerMonthlyWeekOverride,
   updateScannerDashboardInitialCash,
   updateScannerProduct
 } from './scanner.service.js';
@@ -135,6 +137,30 @@ export async function scannerTopSellingRankingController(req, res, next) {
     res.json({
       ok: true,
       ...ranking
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerMonthlySummaryController(req, res, next) {
+  try {
+    const summary = await getScannerMonthlySummary(req.query || {});
+    res.json({
+      ok: true,
+      ...summary
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerUpdateMonthlyWeekOverrideController(req, res, next) {
+  try {
+    const override = await updateScannerMonthlyWeekOverride(req.body || {});
+    res.json({
+      ok: true,
+      override
     });
   } catch (error) {
     next(error);

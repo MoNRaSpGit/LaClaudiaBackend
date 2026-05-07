@@ -12,6 +12,8 @@ import {
   scannerListDiagnosticEventsController,
   scannerListController,
   scannerListStockRequestsController,
+  scannerMonthlySummaryController,
+  scannerUpdateMonthlyWeekOverrideController,
   scannerLookupController,
   scannerResolveStockRequestController,
   scannerTopSellingRankingController,
@@ -35,6 +37,8 @@ router.get('/stock-requests', requirePermission(PERMISSIONS.STOCK_REQUEST_READ),
 router.put('/stock-requests/:id/resolve', requirePermission(PERMISSIONS.STOCK_REQUEST_RESOLVE), scannerResolveStockRequestController);
 router.get('/dashboard/ranking', requirePermission(PERMISSIONS.SCANNER_RANKING_READ), scannerTopSellingRankingController);
 router.get('/dashboard', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_READ), scannerDashboardController);
+router.get('/dashboard/monthly-summary', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_READ), scannerMonthlySummaryController);
+router.put('/dashboard/monthly-summary/week', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_UPDATE), scannerUpdateMonthlyWeekOverrideController);
 router.get('/dashboard/stream', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_READ), scannerDashboardStreamController);
 router.get('/diagnostic-events', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_READ), scannerListDiagnosticEventsController);
 router.put('/dashboard/initial-cash', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_UPDATE), scannerUpdateDashboardInitialCashController);

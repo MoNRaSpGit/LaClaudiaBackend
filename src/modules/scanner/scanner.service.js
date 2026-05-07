@@ -9,6 +9,10 @@ import {
   findProductByBarcode,
   getDashboardInitialCashByDate,
   getBestSalesDayTotal,
+  listDashboardInitialCashBetween,
+  listDailyPaymentTotalsBetween,
+  listDailySalesTotalsBetween,
+  listMonthlyWeekOverridesBetween,
   listScannerDiagnosticEvents,
   listStockRequests,
   listPaymentMovementsBetween,
@@ -19,6 +23,7 @@ import {
   markStockRequestResolved,
   sumConfirmedPaymentsBetween,
   sumConfirmedSalesBetween,
+  upsertMonthlyWeekOverride,
   upsertDashboardInitialCashByDate,
   updateProductById
 } from './scanner.repository.js';
@@ -27,6 +32,8 @@ import {
   normalizeDashboardParams,
   normalizeDashboardInitialCashPayload,
   normalizeLimit,
+  normalizeMonthlySummaryParams,
+  normalizeMonthlyWeekOverridePayload,
   normalizeProductSearchQuery,
   normalizePaymentPayload,
   normalizeProductCreatePayload,
@@ -74,6 +81,101 @@ function toScannerProduct(product) {
 
 function roundMoney(value) {
   return Number(Number(value || 0).toFixed(2));
+}
+
+function addMonthsToMonthKey(monthKey, delta) {
+  const [year, month] = String(monthKey || '').split('-').map((value) => Number(value));
+  const date = new Date(Date.UTC(year, (month || 1) - 1, 1, 0, 0, 0));
+  date.setUTCMonth(date.getUTCMonth() + delta);
+  return `${String(date.getUTCFullYear()).padStart(4, '0')}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function getWeekNumberInMonth(day) {
+  return Math.min(5, Math.floor((Math.max(1, Number(day || 1)) - 1) / 7) + 1);
+}
+
+function formatMonthLabel(monthKey) {
+  const [year, month] = String(monthKey || '').split('-').map((value) => Number(value));
+  return new Intl.DateTimeFormat('es-UY', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC'
+  }).format(new Date(Date.UTC(year, (month || 1) - 1, 1, 0, 0, 0)));
+}
+
+function formatShortDateLabel(dateLabel) {
+  const [year, month, day] = String(dateLabel || '').split('-').map((value) => Number(value));
+  if (!year || !month || !day) {
+    return dateLabel || '-';
+  }
+
+  return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`;
+}
+
+function buildMonthlyWeeksFromDays(monthKey, daysMap, profitRate, weekOverridesMap = new Map()) {
+  const matchingDays = Array.from(daysMap.values())
+    .filter((item) => item.monthKey === monthKey)
+    .sort((left, right) => left.dateLabel.localeCompare(right.dateLabel));
+
+  const weekMap = new Map();
+
+  matchingDays.forEach((dayEntry) => {
+    const weekNumber = getWeekNumberInMonth(dayEntry.day);
+    const current = weekMap.get(weekNumber) || {
+      weekNumber,
+      label: `Semana ${weekNumber}`,
+      salesTotal: 0,
+      paymentsTotal: 0,
+      initialCashTotal: 0,
+      daysCount: 0,
+      startDate: dayEntry.dateLabel,
+      endDate: dayEntry.dateLabel,
+      days: []
+    };
+
+    current.salesTotal += dayEntry.salesTotal;
+    current.paymentsTotal += dayEntry.paymentsTotal;
+    current.initialCashTotal += dayEntry.initialCash;
+    current.daysCount += 1;
+    current.endDate = dayEntry.dateLabel;
+    current.days.push({
+      dateLabel: dayEntry.dateLabel,
+      weekdayLabel: dayEntry.weekdayLabel,
+      salesTotal: roundMoney(dayEntry.salesTotal),
+      paymentsTotal: roundMoney(dayEntry.paymentsTotal),
+      initialCash: roundMoney(dayEntry.initialCash),
+      currentAmount: roundMoney(dayEntry.initialCash + dayEntry.salesTotal - dayEntry.paymentsTotal)
+    });
+
+    weekMap.set(weekNumber, current);
+  });
+
+  return Array.from(weekMap.values())
+    .sort((left, right) => left.weekNumber - right.weekNumber)
+    .map((week) => {
+      const overrideKey = `${monthKey}::${week.weekNumber}`;
+      const override = weekOverridesMap.get(overrideKey) || null;
+      const effectiveSalesTotal = override ? Number(override.sales_total || 0) : week.salesTotal;
+      const effectivePaymentsTotal = override ? Number(override.payments_total || 0) : week.paymentsTotal;
+
+      return {
+        weekNumber: week.weekNumber,
+        label: week.label,
+        rangeLabel: `${formatShortDateLabel(week.startDate)} - ${formatShortDateLabel(week.endDate)}`,
+        salesTotal: roundMoney(effectiveSalesTotal),
+        profitTotal: roundMoney(effectiveSalesTotal * profitRate),
+        paymentsTotal: roundMoney(effectivePaymentsTotal),
+        initialCashTotal: roundMoney(week.initialCashTotal),
+        currentAmount: roundMoney(week.initialCashTotal + effectiveSalesTotal - effectivePaymentsTotal),
+        daysCount: week.daysCount,
+        days: week.days,
+        isOverridden: Boolean(override),
+        overrideNote: String(override?.note || '').trim() || '',
+        overrideUpdatedAt: override?.updated_at ? toCanonicalIsoUtc(override.updated_at) : null,
+        rawSalesTotal: roundMoney(week.salesTotal),
+        rawPaymentsTotal: roundMoney(week.paymentsTotal)
+      };
+    });
 }
 
 function sanitizeShortText(rawValue, { fallback = '', max = 255 } = {}) {
@@ -491,6 +593,135 @@ export async function getScannerTopSellingRanking(rawQuery) {
   return {
     date: params.dateLabel,
     ranking: aggregateRankingRows(rankingRows)
+  };
+}
+
+export async function getScannerMonthlySummary(rawQuery) {
+  const params = normalizeMonthlySummaryParams(rawQuery);
+  const [salesRows, paymentRows, initialCashRows, weekOverrideRows] = await Promise.all([
+    listDailySalesTotalsBetween(params.rangeStart, params.rangeEnd),
+    listDailyPaymentTotalsBetween(params.rangeStart, params.rangeEnd),
+    listDashboardInitialCashBetween(params.rangeStart.slice(0, 10), params.rangeEnd.slice(0, 10)),
+    listMonthlyWeekOverridesBetween(params.rangeStart.slice(0, 7), params.currentMonthKey)
+  ]);
+
+  const weekOverridesMap = new Map();
+  weekOverrideRows.forEach((row) => {
+    weekOverridesMap.set(`${String(row.month_key || '').trim()}::${Number(row.week_number || 0)}`, row);
+  });
+
+  const daysMap = new Map();
+
+  function ensureDay(dateLabel) {
+    if (!daysMap.has(dateLabel)) {
+      const [, month, day] = String(dateLabel || '').split('-').map((value) => Number(value));
+      daysMap.set(dateLabel, {
+        dateLabel,
+        monthKey: String(dateLabel).slice(0, 7),
+        day,
+        month: month || 1,
+        weekdayLabel: new Intl.DateTimeFormat('es-UY', {
+          weekday: 'long',
+          timeZone: 'UTC'
+        }).format(new Date(`${dateLabel}T00:00:00.000Z`)),
+        salesTotal: 0,
+        paymentsTotal: 0,
+        initialCash: 0
+      });
+    }
+
+    return daysMap.get(dateLabel);
+  }
+
+  salesRows.forEach((row) => {
+    const dateLabel = String(row.business_date || '').slice(0, 10);
+    if (!dateLabel) {
+      return;
+    }
+    ensureDay(dateLabel).salesTotal = roundMoney(row.total);
+  });
+
+  paymentRows.forEach((row) => {
+    const dateLabel = String(row.business_date || '').slice(0, 10);
+    if (!dateLabel) {
+      return;
+    }
+    ensureDay(dateLabel).paymentsTotal = roundMoney(row.total);
+  });
+
+  initialCashRows.forEach((row) => {
+    const dateLabel = String(row.business_date || '').slice(0, 10);
+    if (!dateLabel) {
+      return;
+    }
+    ensureDay(dateLabel).initialCash = roundMoney(row.initial_cash);
+  });
+
+  const allowedMonthKeys = new Set();
+  for (let index = 0; index < params.limitMonths; index += 1) {
+    allowedMonthKeys.add(addMonthsToMonthKey(params.currentMonthKey, -index));
+  }
+
+  const monthKeys = Array.from(
+    new Set([
+      ...Array.from(daysMap.values()).map((item) => item.monthKey),
+      ...weekOverrideRows.map((item) => String(item.month_key || '').trim())
+    ])
+  )
+    .filter(Boolean)
+    .filter((monthKey) => allowedMonthKeys.has(monthKey))
+    .sort((left, right) => right.localeCompare(left));
+
+  const months = monthKeys.map((monthKey) => {
+    const monthDays = Array.from(daysMap.values()).filter((item) => item.monthKey === monthKey);
+    const lastBusinessDate = monthDays.length
+      ? monthDays
+        .map((item) => item.dateLabel)
+        .sort((left, right) => right.localeCompare(left))[0]
+      : `${monthKey}-01`;
+
+    const weeks = buildMonthlyWeeksFromDays(monthKey, daysMap, 0.3, weekOverridesMap);
+    const salesTotal = weeks.reduce((acc, week) => acc + Number(week.salesTotal || 0), 0);
+    const paymentsTotal = weeks.reduce((acc, week) => acc + Number(week.paymentsTotal || 0), 0);
+    const initialCashTotal = weeks.reduce((acc, week) => acc + Number(week.initialCashTotal || 0), 0);
+
+    return {
+      monthKey,
+      label: formatMonthLabel(monthKey),
+      salesTotal: roundMoney(salesTotal),
+      profitTotal: roundMoney(salesTotal * 0.3),
+      paymentsTotal: roundMoney(paymentsTotal),
+      initialCashTotal: roundMoney(initialCashTotal),
+      currentAmount: roundMoney(initialCashTotal + salesTotal - paymentsTotal),
+      weeks,
+      weeksCount: weeks.length,
+      lastBusinessDate
+    };
+  });
+
+  const monthLabels = months.map((month) => month.monthKey);
+
+  return {
+    months,
+    meta: {
+      currentMonthKey: params.currentMonthKey,
+      limitMonths: params.limitMonths,
+      returnedMonths: monthLabels.length
+    }
+  };
+}
+
+export async function updateScannerMonthlyWeekOverride(rawPayload) {
+  const normalized = normalizeMonthlyWeekOverridePayload(rawPayload);
+  const updated = await upsertMonthlyWeekOverride(normalized);
+
+  return {
+    monthKey: String(updated?.month_key || normalized.monthKey).trim(),
+    weekNumber: Number(updated?.week_number || normalized.weekNumber),
+    salesTotal: roundMoney(updated?.sales_total ?? normalized.salesTotal),
+    paymentsTotal: roundMoney(updated?.payments_total ?? normalized.paymentsTotal),
+    note: String(updated?.note || normalized.note || '').trim(),
+    updatedAt: updated?.updated_at ? toCanonicalIsoUtc(updated.updated_at) : new Date().toISOString()
   };
 }
 
