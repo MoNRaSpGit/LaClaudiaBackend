@@ -1,77 +1,231 @@
-﻿# Arquitectura Backend
+# Arquitectura Backend
+
+## Objetivo
+
+- Este archivo describe la estructura estable del backend.
+- Aca viven:
+  - el patron del proyecto.
+  - las reglas de trabajo del backend.
+  - los modulos actuales.
+  - los contratos operativos internos.
+- No deberia usarse como bitacora de cambios.
 
 ## Patron
 
 - Enfoque MVC modular por feature.
 - Cada feature vive en `src/modules/<feature>`.
+- La regla base es mantener boundaries claros entre HTTP, negocio y persistencia.
 
 ## Capas
 
-- `*.routes.js`: define endpoints y wiring HTTP.
-- `*.controller.js`: traduce request/response.
-- `*.service.js`: reglas de negocio.
-- `*.repository.js`: queries a base de datos.
-- `*.model.js`: utilidades de dominio (normalizacion/validaciones simples).
+- `*.routes.js`:
+  - define endpoints.
+  - aplica middlewares.
+  - conecta controladores.
+- `*.controller.js`:
+  - traduce `req`/`res`.
+  - no deberia contener reglas de negocio pesadas.
+- `*.service.js`:
+  - concentra reglas de negocio.
+  - compone repositorios.
+  - normaliza contratos de salida.
+- `*.repository.js`:
+  - concentra queries SQL y transacciones.
+  - no deberia mezclar concerns HTTP.
+- `*.model.js`:
+  - normalizacion.
+  - validaciones.
+  - utilidades de dominio livianas.
+
+## Reglas de trabajo
+
+- Toda funcionalidad nueva entra en su modulo o feature backend correspondiente.
+- Evitar controladores gordos:
+  - si una regla crece, se mueve a `service`.
+- Evitar queries sueltas fuera de `repository`.
+- Mantener permisos centralizados en `src/modules/auth/auth.rbac.js`.
+- Mantener timestamps normalizados a ISO UTC en responses.
+- Si un cambio altera estructura, criterio o boundaries:
+  - actualizar este archivo.
+- Si un cambio es una entrega funcional o una mejora validada:
+  - registrar el cambio en `docs/bitacora.md`.
+
+## Flujo de cierre recomendado
+
+1. implementar.
+2. correr pruebas relevantes.
+3. push.
+4. validar deploy/publicacion.
+5. documentar en el mismo ciclo.
+
+## Estructura actual
+
+- `src/config`:
+  - configuracion de entorno, DB y server.
+- `src/modules/auth`:
+  - login.
+  - logout.
+  - keepalive de sesion.
+  - RBAC.
+- `src/modules/health`:
+  - salud de API y DB.
+- `src/modules/scanner`:
+  - catalogo.
+  - ventas.
+  - pagos.
+  - dashboard.
+  - SSE.
+  - stock requests.
+  - diagnostico remoto.
+  - resumen mensual.
+- `src/scripts`:
+  - preparacion idempotente de esquema e indices.
+  - tareas operativas de auth.
 
 ## Modulos actuales
 
-- `health`: salud de API y DB.
-- `auth`: login por usuario/clave (fase inicial).
-- `scanner`: lookup/listado de productos + confirmacion de venta.
-- `scanner.stream`: capa de stream en tiempo real (SSE) para dashboard.
-- `stock requests`:
-  - resuelto dentro del modulo `scanner` para no abrir otro bounded context todavia.
-  - endpoints:
-    - `POST /api/scanner/stock-requests`
-    - `GET /api/scanner/stock-requests`
-    - `PUT /api/scanner/stock-requests/:id/resolve`
-  - persistencia:
-    - `stock_requests`
-    - `stock_request_items`
-- `scripts`: preparacion idempotente de esquema e indices DB.
-
-## Auth (sesiones)
+### `auth`
 
 - Sesion persistida en `auth_sessions`.
 - Expiracion base configurable por `AUTH_SESSION_HOURS`.
-- Renovacion deslizante opcional por `AUTH_SESSION_SLIDING_RENEWAL`:
-  - al validar token, se actualiza `last_seen_at`.
-  - si sliding esta activo, tambien se renueva `expires_at`.
+- Renovacion deslizante configurable por `AUTH_SESSION_SLIDING_RENEWAL`.
+- Fuente de verdad de permisos:
+  - `src/modules/auth/auth.rbac.js`
 
-## Scanner catalogo (update)
+### `scanner`
 
-- Endpoint: `PUT /api/scanner/products/:id`.
-- Persistencia: `nombre`, `precio_venta` y `imagen`.
-- Guard: permiso `scanner.product.update`.
+- Lookup y listado de productos.
+- Confirmacion de ventas.
+- Registro de pagos.
+- Dashboard diario.
+- Ranking diario.
+- Stream SSE para panel.
+- Live state de caja.
+- Diagnostico remoto.
+- Stock requests.
+- Resumen mensual de `Meses`.
 
-## Tiempo real (SSE)
+### `health`
 
-- Endpoint: `GET /api/scanner/dashboard/stream`.
-- Requiere `Authorization: Bearer <token>` y permiso `scanner.dashboard.read`.
-- Envia snapshot inicial + updates cuando se registra:
-  - `POST /api/scanner/sales`
-  - `POST /api/scanner/payments`
-- Keepalive: comentario SSE periodico para mantener conexiones vivas.
+- Endpoint de salud de API.
+- Validacion basica de conexion DB.
+
+## Stock requests
+
+- Por ahora vive dentro del modulo `scanner`.
+- No se abrio un bounded context aparte todavia.
+
+### Endpoints activos
+
+- `POST /api/scanner/stock-requests`
+- `GET /api/scanner/stock-requests`
+- `PUT /api/scanner/stock-requests/:id`
+- `PUT /api/scanner/stock-requests/:id/resolve`
+
+### Persistencia
+
+- `stock_requests`
+- `stock_request_items`
+
+### Regla operativa actual
+
+- `admin` puede ver pedidos pendientes de todos.
+- `operario` ve sus propios pedidos pendientes.
+- `admin` puede editar pedidos pendientes.
+- `operario` puede editar solo pedidos propios pendientes.
+- el cierre de pedido queda permitido para `admin` y para el creador del pedido.
+
+## Dashboard y tiempo real
+
+### Dashboard HTTP
+
+- Endpoint: `GET /api/scanner/dashboard`
+- Devuelve:
+  - metricas.
+  - comparacion.
+  - movimientos.
+  - ranking.
+
+### SSE
+
+- Endpoint: `GET /api/scanner/dashboard/stream`
+- Requiere:
+  - `Authorization: Bearer <token>`
+  - permiso `scanner.dashboard.read`
+- Envia:
+  - snapshot inicial.
+  - updates al registrar ventas o pagos.
+- Keepalive:
+  - comentario SSE periodico para mantener conexiones vivas.
+
+## Permisos
+
+- Los permisos se resuelven por `requirePermission(...)`.
+- No endurecer accesos con roles hardcodeados en rutas si el permiso ya existe.
+
+### Permisos relevantes actuales
+
+- `scanner.product.create`
+- `scanner.product.update`
+- `scanner.sale.create`
+- `scanner.payment.create`
+- `scanner.ranking.read`
+- `scanner.dashboard.read`
+- `scanner.dashboard.update`
+- `stock.request.create`
+- `stock.request.read`
+- `stock.request.update`
+- `stock.request.resolve`
 
 ## Fuente de verdad de tiempo
 
-- La API normaliza timestamps a ISO UTC (`...Z`) antes de responder.
-- Config DB (`src/config/db.js`) fija `timezone: 'Z'` y `dateStrings` para evitar reinterpretacion por host/driver.
-- El frontend convierte/renderiza en la zona operativa (`America/Montevideo`, `UTC-03:00`).
+- La API responde timestamps normalizados a ISO UTC (`...Z`).
+- Config DB en `src/config/db.js` fija:
+  - `timezone: 'Z'`
+  - `dateStrings`
+- El frontend convierte/renderiza en `America/Montevideo`.
 
 ## DB y performance
 
 - Config DB en `src/config/db.js` usando pool MySQL.
 - Tabla objetivo configurable por `PRODUCTS_TABLE`.
-- Script `npm run db:prepare:scanner` asegura indices para lookup rapido:
-  - `idx_scanner_barcode`
-  - `idx_scanner_barcode_normalized`
-  - `idx_scanner_estado_id`
-- Script `npm run db:prepare:core` asegura esquema base de negocio:
-  - `auth_users`
-  - `sales_tickets`
-  - `sales_ticket_items`
-  - `cash_payments`
-- Tambien asegura:
-  - foreign keys (`sales_tickets.user_id`, `sales_ticket_items.sale_id`, `cash_payments.user_id`)
-  - indices para consultas por fecha, estado, usuario y producto.
+
+### Scripts operativos
+
+- `npm run db:prepare:scanner`
+  - asegura indices de lookup rapido:
+    - `idx_scanner_barcode`
+    - `idx_scanner_barcode_normalized`
+    - `idx_scanner_estado_id`
+- `npm run db:prepare:core`
+  - asegura esquema base:
+    - `auth_users`
+    - `sales_tickets`
+    - `sales_ticket_items`
+    - `cash_payments`
+    - `stock_requests`
+    - `stock_request_items`
+- `npm run auth:cleanup-sessions`
+  - purga sesiones expiradas/revocadas.
+- `npm run auth:hash-password -- "<clave>"`
+  - genera hash compatible con `auth_users.password_hash`.
+
+## Calidad y pruebas
+
+- Suite base con Vitest.
+- Cobertura actual concentrada en:
+  - RBAC.
+  - modelos de auth.
+  - modelos de scanner.
+- Antes de cerrar cambios sensibles conviene validar:
+  - `npm test -- --run`
+  - smoke funcional real si toca auth, ventas o pagos.
+
+## Ruta rapida para nuevo agente
+
+1. `README.md`
+2. `docs/architecture.md`
+3. `docs/contracts-auth-sales.md`
+4. `docs/bitacora.md`
+5. `src/modules/auth/*`
+6. `src/modules/scanner/*`
