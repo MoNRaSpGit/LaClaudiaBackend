@@ -21,6 +21,7 @@ describe('roleHasPermission', () => {
   it('allows operario stock request permissions', () => {
     expect(roleHasPermission(ROLES.OPERARIO, PERMISSIONS.STOCK_REQUEST_CREATE)).toBe(true);
     expect(roleHasPermission(ROLES.OPERARIO, PERMISSIONS.STOCK_REQUEST_READ)).toBe(true);
+    expect(roleHasPermission(ROLES.OPERARIO, PERMISSIONS.STOCK_REQUEST_UPDATE)).toBe(true);
     expect(roleHasPermission(ROLES.OPERARIO, PERMISSIONS.STOCK_REQUEST_RESOLVE)).toBe(true);
   });
 

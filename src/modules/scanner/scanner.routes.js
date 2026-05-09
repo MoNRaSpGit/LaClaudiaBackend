@@ -18,6 +18,7 @@ import {
   scannerResolveStockRequestController,
   scannerTopSellingRankingController,
   scannerUpdateDashboardInitialCashController,
+  scannerUpdateStockRequestController,
   scannerUpdateProductController,
   scannerUpdateLiveStateController
 } from './scanner.controller.js';
@@ -34,6 +35,7 @@ router.post('/sales', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scanne
 router.post('/diagnostic-events', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerCreateDiagnosticEventController);
 router.post('/stock-requests', requirePermission(PERMISSIONS.STOCK_REQUEST_CREATE), scannerCreateStockRequestController);
 router.get('/stock-requests', requirePermission(PERMISSIONS.STOCK_REQUEST_READ), scannerListStockRequestsController);
+router.put('/stock-requests/:id', requirePermission(PERMISSIONS.STOCK_REQUEST_UPDATE), scannerUpdateStockRequestController);
 router.put('/stock-requests/:id/resolve', requirePermission(PERMISSIONS.STOCK_REQUEST_RESOLVE), scannerResolveStockRequestController);
 router.get('/dashboard/ranking', requirePermission(PERMISSIONS.SCANNER_RANKING_READ), scannerTopSellingRankingController);
 router.get('/dashboard', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_READ), scannerDashboardController);

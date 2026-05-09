@@ -705,6 +705,60 @@ export async function createStockRequest(payload) {
   }
 }
 
+export async function updateStockRequest(payload) {
+  const pool = getDbPoolOrThrow();
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    await connection.query(
+      `
+        UPDATE stock_requests
+        SET provider_name = ?
+        WHERE id = ?
+          AND status = 'pending'
+        LIMIT 1
+      `,
+      [payload.provider_name, payload.request_id]
+    );
+
+    await connection.query(
+      `
+        DELETE FROM stock_request_items
+        WHERE request_id = ?
+      `,
+      [payload.request_id]
+    );
+
+    const itemPlaceholders = payload.items.map(() => '(?, ?, ?)').join(', ');
+    const itemValues = payload.items.flatMap((item) => [
+      payload.request_id,
+      item.product_name,
+      item.quantity
+    ]);
+
+    await connection.query(
+      `
+        INSERT INTO stock_request_items (
+          request_id,
+          product_name,
+          quantity
+        ) VALUES ${itemPlaceholders}
+      `,
+      itemValues
+    );
+
+    await connection.commit();
+    return payload.request_id;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
 export async function listStockRequests({ requestedByUserId = null, status = 'pending' } = {}) {
   const pool = getDbPoolOrThrow();
   const params = [];

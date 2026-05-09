@@ -25,6 +25,7 @@ import {
   sumConfirmedSalesBetween,
   upsertMonthlyWeekOverride,
   upsertDashboardInitialCashByDate,
+  updateStockRequest,
   updateProductById
 } from './scanner.repository.js';
 import {
@@ -39,7 +40,8 @@ import {
   normalizeProductCreatePayload,
   normalizeProductUpdatePayload,
   normalizeSalePayload,
-  normalizeStockRequestPayload
+  normalizeStockRequestPayload,
+  normalizeStockRequestUpdatePayload
 } from './scanner.model.js';
 
 function resolveThumbnailUrl(rawImage) {
@@ -786,6 +788,51 @@ export async function getUserStockRequests(authUser = {}) {
   });
 
   return toCanonicalStockRequests(rows);
+}
+
+export async function updateUserStockRequest(rawRequestId, rawPayload, authUser = {}) {
+  const normalized = normalizeStockRequestUpdatePayload(rawRequestId, rawPayload);
+  const userId = Number(authUser?.id || 0);
+  const userRole = String(authUser?.role || '').trim().toLowerCase();
+
+  if (!userId) {
+    const error = new Error('usuario autenticado invalido');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const request = await findStockRequestById(normalized.request_id);
+  if (!request) {
+    const error = new Error('Pedido de stock no encontrado');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (String(request.status || '').trim().toLowerCase() !== 'pending') {
+    const error = new Error('El pedido ya fue cerrado');
+    error.statusCode = 409;
+    throw error;
+  }
+
+  if (userRole !== 'admin' && Number(request.requested_by_user_id || 0) !== userId) {
+    const error = new Error('No autorizado para editar este pedido');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  await updateStockRequest(normalized);
+
+  const rows = await listStockRequests({ status: null });
+  const requests = toCanonicalStockRequests(rows);
+  const updated = requests.find((item) => item.requestId === normalized.request_id);
+
+  if (!updated) {
+    const error = new Error('No se pudo recuperar el pedido actualizado');
+    error.statusCode = 500;
+    throw error;
+  }
+
+  return updated;
 }
 
 export async function resolveUserStockRequest(rawRequestId, authUser = {}) {

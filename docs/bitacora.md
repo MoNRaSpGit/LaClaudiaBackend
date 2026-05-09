@@ -298,3 +298,18 @@ Estamos en etapa de consolidar logica de caja y ventas en frontend, para luego b
 
 - Se fuerza nuevo deploy de backend para publicar el armado semanal completo `lunes -> domingo` en `Meses`.
 - Los dias sin movimiento deben salir con `0` en lugar de omitirlos.
+
+## Stock requests - edicion
+
+- Fecha: `2026-05-08`
+- Nuevo endpoint: `PUT /api/scanner/stock-requests/:id`.
+- Permite editar pedidos pendientes de stock:
+  - proveedor.
+  - lista de items.
+  - cantidades.
+- Permisos:
+  - `admin` puede editar cualquier pedido pendiente.
+  - `operario` solo puede editar pedidos propios pendientes.
+- La actualizacion reemplaza los items dentro de una transaccion para evitar estados parciales.
+- Validacion:
+  - `npm test -- --run`: OK.

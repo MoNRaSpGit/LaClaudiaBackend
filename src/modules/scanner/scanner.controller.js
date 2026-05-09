@@ -12,6 +12,7 @@ import {
   registerScannerPayment,
   registerScannerSale,
   resolveUserStockRequest,
+  updateUserStockRequest,
   updateScannerMonthlyWeekOverride,
   updateScannerDashboardInitialCash,
   updateScannerProduct
@@ -185,6 +186,18 @@ export async function scannerListStockRequestsController(req, res, next) {
     res.json({
       ok: true,
       requests
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerUpdateStockRequestController(req, res, next) {
+  try {
+    const request = await updateUserStockRequest(req.params.id, req.body || {}, req.auth?.user || {});
+    res.json({
+      ok: true,
+      request
     });
   } catch (error) {
     next(error);

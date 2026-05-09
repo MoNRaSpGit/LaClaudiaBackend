@@ -527,3 +527,56 @@ export function normalizeStockRequestPayload(rawPayload, authUser = {}) {
     items
   };
 }
+
+export function normalizeStockRequestUpdatePayload(rawRequestId, rawPayload) {
+  const requestId = normalizeRequiredInteger(rawRequestId);
+  if (requestId === null) {
+    const error = new Error('requestId invalido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const payload = rawPayload || {};
+  const providerName = String(payload.provider || payload.providerName || '').trim().slice(0, 180);
+  const rawItems = Array.isArray(payload.items) ? payload.items : [];
+
+  if (!providerName) {
+    const error = new Error('provider requerido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!rawItems.length) {
+    const error = new Error('items requeridos');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const items = rawItems.map((item, index) => {
+    const productName = String(item?.name || item?.productName || '').trim().slice(0, 180);
+    const quantity = normalizeQuantity(item?.quantity);
+
+    if (!productName) {
+      const error = new Error(`Item #${index + 1}: product_name requerido`);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (quantity === null) {
+      const error = new Error(`Item #${index + 1}: quantity invalida`);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    return {
+      product_name: productName,
+      quantity
+    };
+  });
+
+  return {
+    request_id: requestId,
+    provider_name: providerName,
+    items
+  };
+}
