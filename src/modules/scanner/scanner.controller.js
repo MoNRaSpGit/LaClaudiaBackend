@@ -1,6 +1,9 @@
 import {
+  createScannerCustomer,
   createScannerProduct,
   createUserStockRequest,
+  getScannerCustomerDetail,
+  getScannerCustomers,
   getScannerDiagnosticEvents,
   getScannerDashboard,
   getScannerMonthlySummary,
@@ -8,6 +11,7 @@ import {
   getScannerProducts,
   getUserStockRequests,
   lookupProductByBarcode,
+  registerScannerCustomerAccountPayment,
   registerScannerDiagnosticEvent,
   registerScannerPayment,
   registerScannerSale,
@@ -84,6 +88,60 @@ export async function scannerCreateSaleController(req, res, next) {
     res.status(201).json({
       ok: true,
       sale
+    });
+    notifyDashboardChanged().catch(() => {});
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerCreateCustomerController(req, res, next) {
+  try {
+    const customer = await createScannerCustomer(req.body || {});
+    res.status(201).json({
+      ok: true,
+      customer
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerListCustomersController(_req, res, next) {
+  try {
+    const customers = await getScannerCustomers();
+    res.json({
+      ok: true,
+      customers
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerCustomerDetailController(req, res, next) {
+  try {
+    const detail = await getScannerCustomerDetail(req.params.id);
+    res.json({
+      ok: true,
+      ...detail
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerCreateCustomerAccountPaymentController(req, res, next) {
+  try {
+    const payload = req.body || {};
+    const payment = await registerScannerCustomerAccountPayment({
+      ...payload,
+      customerId: req.params.id,
+      userId: req.auth?.user?.id ?? payload.userId
+    });
+    res.status(201).json({
+      ok: true,
+      payment
     });
     notifyDashboardChanged().catch(() => {});
   } catch (error) {

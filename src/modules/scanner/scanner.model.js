@@ -83,6 +83,32 @@ function normalizeQuantity(value) {
   return Math.max(1, Math.floor(parsed));
 }
 
+function normalizeSalePaymentMethod(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'efectivo' || normalized === 'tarjeta' || normalized === 'cuenta') {
+    return normalized;
+  }
+
+  if (normalized === 'debito' || normalized === 'credito') {
+    return 'tarjeta';
+  }
+
+  return 'efectivo';
+}
+
+function normalizeCustomerAccountPaymentMethod(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'efectivo' || normalized === 'tarjeta') {
+    return normalized;
+  }
+
+  if (normalized === 'debito' || normalized === 'credito') {
+    return 'tarjeta';
+  }
+
+  return 'efectivo';
+}
+
 function parseDateOnly(rawValue) {
   const value = String(rawValue || '').trim();
   if (!value) {
@@ -274,14 +300,84 @@ export function normalizeSalePayload(rawPayload) {
   });
 
   const totalAmount = Number(items.reduce((acc, item) => acc + item.line_total, 0).toFixed(2));
+  const salePaymentMethod = normalizeSalePaymentMethod(payload.paymentMethod);
+  const customerId = normalizeOptionalInteger(payload.customerId);
+
+  if (salePaymentMethod === 'cuenta' && customerId === null) {
+    const error = new Error('customerId requerido para ventas en cuenta');
+    error.statusCode = 400;
+    throw error;
+  }
 
   return {
     external_id: normalizeOptionalString(payload.externalId || payload.id),
     user_id: normalizeOptionalInteger(payload.userId),
+    sale_payment_method: salePaymentMethod,
+    customer_id: salePaymentMethod === 'cuenta' ? customerId : null,
     notes: normalizeOptionalString(payload.notes),
     items_count: items.reduce((acc, item) => acc + item.quantity, 0),
     total_amount: totalAmount,
     items
+  };
+}
+
+export function normalizeCustomerCreatePayload(rawPayload) {
+  const payload = rawPayload || {};
+  const name = String(payload.name || payload.nombre || '').trim().slice(0, 120);
+  const phone = String(payload.phone || payload.telefono || '').trim().slice(0, 40);
+  const notes = String(payload.notes || payload.notas || '').trim().slice(0, 255);
+
+  if (!name) {
+    const error = new Error('name requerido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    name,
+    phone: phone || null,
+    notes: notes || null
+  };
+}
+
+export function normalizeCustomerId(rawCustomerId) {
+  const customerId = normalizeRequiredInteger(rawCustomerId);
+  if (customerId === null) {
+    const error = new Error('customerId invalido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return customerId;
+}
+
+export function normalizeCustomerAccountPaymentPayload(rawPayload) {
+  const payload = rawPayload || {};
+  const customerId = normalizeRequiredInteger(payload.customerId);
+  const userId = normalizeOptionalInteger(payload.userId);
+  const amount = normalizeMoney(payload.amount);
+  const paymentMethod = normalizeCustomerAccountPaymentMethod(payload.paymentMethod);
+  const notes = String(payload.notes || payload.note || payload.description || '').trim().slice(0, 255);
+
+  if (customerId === null) {
+    const error = new Error('customerId invalido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (amount === null) {
+    const error = new Error('Monto de pago invalido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    external_id: normalizeOptionalString(payload.externalId || payload.id),
+    customer_id: customerId,
+    user_id: userId,
+    payment_method: paymentMethod,
+    amount,
+    notes: notes || null
   };
 }
 

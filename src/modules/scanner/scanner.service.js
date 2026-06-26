@@ -1,15 +1,23 @@
 import {
   createProduct,
   createCashPayment,
+  createCustomerAccountPayment,
+  createCustomer,
   createScannerDiagnosticEvent,
   createSaleTicket,
   createStockRequest,
+  findCustomerById,
   findStockRequestById,
   findProductById,
   findProductByBarcode,
   getDashboardInitialCashByDate,
   getBestSalesDayTotal,
   listDashboardInitialCashBetween,
+  getTotalOutstandingCustomerDebt,
+  listCustomerAccountSales,
+  listCustomerAccountPaymentMovementsBetween,
+  listCustomerAccountPayments,
+  listCustomersWithDebt,
   listDailyPaymentTotalsBetween,
   listDailySalesTotalsBetween,
   listMonthlyWeekOverridesBetween,
@@ -21,8 +29,11 @@ import {
   listSaleItemsBySaleIds,
   listSalesMovementsBetween,
   markStockRequestResolved,
+  sumConfirmedCustomerAccountPaymentsBetween,
+  sumConfirmedCustomerAccountPaymentsByMethodBetween,
   sumConfirmedPaymentsBetween,
   sumConfirmedSalesBetween,
+  sumConfirmedSalesByPaymentMethodBetween,
   upsertMonthlyWeekOverride,
   upsertDashboardInitialCashByDate,
   updateStockRequest,
@@ -30,6 +41,9 @@ import {
 } from './scanner.repository.js';
 import {
   normalizeBarcode,
+  normalizeCustomerAccountPaymentPayload,
+  normalizeCustomerCreatePayload,
+  normalizeCustomerId,
   normalizeDashboardParams,
   normalizeDashboardInitialCashPayload,
   normalizeLimit,
@@ -322,11 +336,84 @@ function buildSalesMovementsWithDetails(saleRows, saleItems) {
     createdAt: toCanonicalIsoUtc(sale.created_at),
     detail: {
       kind: 'sale',
+      paymentMethod: (() => {
+        const rawMethod = String(sale.sale_payment_method || 'efectivo').trim().toLowerCase() || 'efectivo';
+        return rawMethod === 'debito' || rawMethod === 'credito' ? 'tarjeta' : rawMethod;
+      })(),
       operator: 'Operario',
       createdAt: toCanonicalIsoUtc(sale.created_at),
       items: itemsBySale.get(Number(sale.id)) || []
     }
   }));
+}
+
+function createEmptySalesByPaymentMethod() {
+  return {
+    efectivo: 0,
+    tarjeta: 0,
+    cuenta: 0
+  };
+}
+
+function createEmptyCustomerAccountPaymentsByMethod() {
+  return {
+    efectivo: 0,
+    tarjeta: 0
+  };
+}
+
+function toCanonicalIsoOrNull(rawValue) {
+  return rawValue ? toCanonicalIsoUtc(rawValue) : null;
+}
+
+function toCustomerSummary(row) {
+  return {
+    id: Number(row.id || 0),
+    name: String(row.name || '').trim(),
+    phone: String(row.phone || '').trim() || '',
+    notes: String(row.notes || '').trim() || '',
+    isActive: Boolean(Number(row.is_active || 0)),
+    debtTotal: roundMoney(row.debt_total),
+    accountSalesCount: Number(row.account_sales_count || 0),
+    accountPaymentsTotal: roundMoney(row.account_payments_total),
+    accountPaymentsCount: Number(row.account_payments_count || 0),
+    lastAccountSaleAt: toCanonicalIsoOrNull(row.last_account_sale_at),
+    lastAccountPaymentAt: toCanonicalIsoOrNull(row.last_account_payment_at),
+    createdAt: toCanonicalIsoOrNull(row.created_at),
+    updatedAt: toCanonicalIsoOrNull(row.updated_at)
+  };
+}
+
+function aggregateSalesByPaymentMethod(rows) {
+  const totals = createEmptySalesByPaymentMethod();
+
+  rows.forEach((row) => {
+    const rawMethod = String(row?.sale_payment_method || '').trim().toLowerCase();
+    const method = rawMethod === 'debito' || rawMethod === 'credito' ? 'tarjeta' : rawMethod;
+    if (!Object.hasOwn(totals, method)) {
+      return;
+    }
+
+    totals[method] = roundMoney(Number(totals[method] || 0) + Number(row.total || 0));
+  });
+
+  return totals;
+}
+
+function aggregateCustomerAccountPaymentsByMethod(rows) {
+  const totals = createEmptyCustomerAccountPaymentsByMethod();
+
+  rows.forEach((row) => {
+    const rawMethod = String(row?.payment_method || '').trim().toLowerCase();
+    const method = rawMethod === 'debito' || rawMethod === 'credito' ? 'tarjeta' : rawMethod;
+    if (!Object.hasOwn(totals, method)) {
+      return;
+    }
+
+    totals[method] = roundMoney(Number(totals[method] || 0) + Number(row.total || 0));
+  });
+
+  return totals;
 }
 
 function buildPaymentMovements(paymentRows) {
@@ -338,6 +425,21 @@ function buildPaymentMovements(paymentRows) {
     detail: {
       kind: 'payment',
       description: payment.description ? payment.description : 'Pago registrado sin descripcion.'
+    }
+  }));
+}
+
+function buildCustomerAccountPaymentMovements(paymentRows) {
+  return paymentRows.map((payment) => ({
+    id: `customer-account-payment-${payment.id}`,
+    type: 'Cobro cuenta',
+    amount: roundMoney(payment.amount),
+    createdAt: toCanonicalIsoUtc(payment.created_at),
+    detail: {
+      kind: 'payment',
+      description: payment.notes
+        ? `${String(payment.customer_name || '').trim() || 'Cliente'}: ${payment.notes}`
+        : `Cobro de cuenta a ${String(payment.customer_name || '').trim() || 'cliente'}.`
     }
   }));
 }
@@ -512,11 +614,104 @@ export async function updateScannerProduct(rawProductId, rawPayload) {
 export async function registerScannerSale(rawPayload) {
   const normalized = normalizeSalePayload(rawPayload);
 
+  if (normalized.customer_id) {
+    const customer = await findCustomerById(normalized.customer_id);
+    if (!customer || !Number(customer.is_active || 0)) {
+      const error = new Error('Cliente no encontrado o inactivo');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
   try {
     return await createSaleTicket(normalized);
   } catch (error) {
     if (error?.code === 'ER_DUP_ENTRY') {
       const duplicateError = new Error('La venta ya fue registrada (externalId duplicado)');
+      duplicateError.statusCode = 409;
+      throw duplicateError;
+    }
+    throw error;
+  }
+}
+
+export async function createScannerCustomer(rawPayload) {
+  const normalized = normalizeCustomerCreatePayload(rawPayload);
+  const customerId = await createCustomer(normalized);
+  const customer = await findCustomerById(customerId);
+
+  return toCustomerSummary({
+    ...customer,
+    debt_total: 0,
+    account_sales_count: 0,
+    last_account_sale_at: null
+  });
+}
+
+export async function getScannerCustomers() {
+  const rows = await listCustomersWithDebt();
+  return rows.map(toCustomerSummary);
+}
+
+export async function getScannerCustomerDetail(rawCustomerId) {
+  const customerId = normalizeCustomerId(rawCustomerId);
+  const customer = await findCustomerById(customerId);
+  if (!customer) {
+    const error = new Error('Cliente no encontrado');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const [customers, accountSales, accountPayments] = await Promise.all([
+    listCustomersWithDebt(),
+    listCustomerAccountSales(customerId, 20),
+    listCustomerAccountPayments(customerId, 20)
+  ]);
+  const summary = customers.find((item) => Number(item.id || 0) === customerId);
+
+  return {
+    customer: toCustomerSummary({
+      ...customer,
+      debt_total: summary?.debt_total ?? 0,
+      account_sales_count: summary?.account_sales_count ?? 0,
+      account_payments_total: summary?.account_payments_total ?? 0,
+      account_payments_count: summary?.account_payments_count ?? 0,
+      last_account_sale_at: summary?.last_account_sale_at ?? null,
+      last_account_payment_at: summary?.last_account_payment_at ?? null
+    }),
+    accountSales: accountSales.map((sale) => ({
+      id: Number(sale.id || 0),
+      externalId: String(sale.external_id || '').trim(),
+      totalAmount: roundMoney(sale.total_amount),
+      itemsCount: Number(sale.items_count || 0),
+      createdAt: toCanonicalIsoOrNull(sale.created_at)
+    })),
+    accountPayments: accountPayments.map((payment) => ({
+      id: Number(payment.id || 0),
+      externalId: String(payment.external_id || '').trim(),
+      paymentMethod: String(payment.payment_method || 'efectivo').trim(),
+      amount: roundMoney(payment.amount),
+      notes: String(payment.notes || '').trim(),
+      createdAt: toCanonicalIsoOrNull(payment.created_at)
+    }))
+  };
+}
+
+export async function registerScannerCustomerAccountPayment(rawPayload) {
+  const normalized = normalizeCustomerAccountPaymentPayload(rawPayload);
+  const customer = await findCustomerById(normalized.customer_id);
+
+  if (!customer || !Number(customer.is_active || 0)) {
+    const error = new Error('Cliente no encontrado o inactivo');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  try {
+    return await createCustomerAccountPayment(normalized);
+  } catch (error) {
+    if (error?.code === 'ER_DUP_ENTRY') {
+      const duplicateError = new Error('El pago de cuenta ya fue registrado (externalId duplicado)');
       duplicateError.statusCode = 409;
       throw duplicateError;
     }
@@ -565,19 +760,29 @@ export async function getScannerDashboard(rawQuery) {
 
   const [
     salesToday,
+    salesByPaymentMethodRows,
     paymentsToday,
+    customerAccountPaymentsToday,
+    customerAccountPaymentsByMethodRows,
+    outstandingDebtTotal,
     salesYesterday,
     bestDaySales,
     saleRows,
     paymentRows,
+    customerAccountPaymentRows,
     rankingRows
   ] = await Promise.all([
     sumConfirmedSalesBetween(params.dayStart, params.dayEnd),
+    sumConfirmedSalesByPaymentMethodBetween(params.dayStart, params.dayEnd),
     sumConfirmedPaymentsBetween(params.dayStart, params.dayEnd),
+    sumConfirmedCustomerAccountPaymentsBetween(params.dayStart, params.dayEnd),
+    sumConfirmedCustomerAccountPaymentsByMethodBetween(params.dayStart, params.dayEnd),
+    getTotalOutstandingCustomerDebt(),
     sumConfirmedSalesBetween(params.yesterdayStart, params.yesterdayEnd),
     getBestSalesDayTotal(),
     listSalesMovementsBetween(params.dayStart, params.dayEnd, params.movementLimit),
     listPaymentMovementsBetween(params.dayStart, params.dayEnd, params.movementLimit),
+    listCustomerAccountPaymentMovementsBetween(params.dayStart, params.dayEnd, params.movementLimit),
     listRankingBetween(params.dayStart, params.dayEnd, params.rankingLimit)
   ]);
 
@@ -586,17 +791,35 @@ export async function getScannerDashboard(rawQuery) {
 
   const salesMovements = buildSalesMovementsWithDetails(saleRows, saleItems);
   const paymentMovements = buildPaymentMovements(paymentRows);
+  const customerAccountPaymentMovements = buildCustomerAccountPaymentMovements(customerAccountPaymentRows);
   const movements = dedupeMovementsById(
-    [...salesMovements, ...paymentMovements]
+    [...salesMovements, ...paymentMovements, ...customerAccountPaymentMovements]
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  );
+  const salesByPaymentMethod = aggregateSalesByPaymentMethod(salesByPaymentMethodRows);
+  const customerAccountPaymentsByMethod = aggregateCustomerAccountPaymentsByMethod(customerAccountPaymentsByMethodRows);
+  const physicalCashAmount = roundMoney(
+    storedInitialCash
+    + Number(salesByPaymentMethod.efectivo || 0)
+    + Number(customerAccountPaymentsByMethod.efectivo || 0)
+    - Number(paymentsToday || 0)
+  );
+  const nonCashPendingTotal = roundMoney(
+    Number(salesByPaymentMethod.tarjeta || 0)
+    + Number(salesByPaymentMethod.cuenta || 0)
   );
 
   const metrics = {
     initialCash: storedInitialCash,
     salesToday: roundMoney(salesToday),
     profitToday: roundMoney(salesToday * params.profitRate),
-    currentAmount: roundMoney(storedInitialCash + salesToday - paymentsToday),
+    currentAmount: physicalCashAmount,
     paymentsTotal: roundMoney(paymentsToday),
+    customerAccountPaymentsTotal: roundMoney(customerAccountPaymentsToday),
+    customerAccountPaymentsCashTotal: roundMoney(customerAccountPaymentsByMethod.efectivo),
+    customerAccountPaymentsCardTotal: roundMoney(customerAccountPaymentsByMethod.tarjeta),
+    nonCashPendingTotal,
+    outstandingDebtTotal: roundMoney(outstandingDebtTotal),
     profitRate: params.profitRate
   };
 
@@ -611,6 +834,7 @@ export async function getScannerDashboard(rawQuery) {
   return {
     date: params.dateLabel,
     metrics,
+    salesByPaymentMethod,
     comparison,
     movements,
     ranking
@@ -656,6 +880,7 @@ export async function getScannerMonthlySummary(rawQuery) {
           timeZone: 'UTC'
         }).format(new Date(`${dateLabel}T00:00:00.000Z`)),
         salesTotal: 0,
+        salesByPaymentMethod: createEmptySalesByPaymentMethod(),
         paymentsTotal: 0,
         initialCash: 0
       });
@@ -669,7 +894,14 @@ export async function getScannerMonthlySummary(rawQuery) {
     if (!dateLabel) {
       return;
     }
-    ensureDay(dateLabel).salesTotal = roundMoney(row.total);
+    const day = ensureDay(dateLabel);
+    const rawMethod = String(row.sale_payment_method || '').trim().toLowerCase();
+    const method = rawMethod === 'debito' || rawMethod === 'credito' ? 'tarjeta' : rawMethod;
+    const total = roundMoney(row.total);
+    day.salesTotal = roundMoney(day.salesTotal + total);
+    if (Object.hasOwn(day.salesByPaymentMethod, method)) {
+      day.salesByPaymentMethod[method] = roundMoney(day.salesByPaymentMethod[method] + total);
+    }
   });
 
   paymentRows.forEach((row) => {

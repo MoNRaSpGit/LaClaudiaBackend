@@ -32,6 +32,37 @@ async function foreignKeyExists(pool, tableName, foreignKeyName) {
   return Boolean(rows[0]?.count);
 }
 
+async function columnExists(pool, tableName, columnName) {
+  const [rows] = await pool.query(
+    `
+      SELECT COUNT(*) AS count
+      FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME = ?
+    `,
+    [tableName, columnName]
+  );
+
+  return Boolean(rows[0]?.count);
+}
+
+async function getColumnType(pool, tableName, columnName) {
+  const [rows] = await pool.query(
+    `
+      SELECT COLUMN_TYPE AS columnType
+      FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME = ?
+      LIMIT 1
+    `,
+    [tableName, columnName]
+  );
+
+  return String(rows[0]?.columnType || '').trim().toLowerCase();
+}
+
 async function ensureIndex(pool, tableName, indexName, indexSql) {
   const exists = await indexExists(pool, tableName, indexName);
   if (exists) {
@@ -52,6 +83,65 @@ async function ensureForeignKey(pool, tableName, foreignKeyName, fkSql) {
 
   await pool.query(fkSql);
   console.log(`[core-schema] ${foreignKeyName} creado`);
+}
+
+async function ensureColumn(pool, tableName, columnName, columnSql) {
+  const exists = await columnExists(pool, tableName, columnName);
+  if (exists) {
+    console.log(`[core-schema] ${tableName}.${columnName} ya existe`);
+    return;
+  }
+
+  await pool.query(columnSql);
+  console.log(`[core-schema] ${tableName}.${columnName} creado`);
+}
+
+async function ensureSalesTicketPaymentMethodColumn(pool) {
+  await ensureColumn(
+    pool,
+    'sales_tickets',
+    'sale_payment_method',
+    `
+      ALTER TABLE sales_tickets
+      ADD COLUMN sale_payment_method ENUM('efectivo', 'tarjeta', 'cuenta')
+      NOT NULL DEFAULT 'efectivo'
+      AFTER user_id
+    `
+  );
+
+  const currentType = await getColumnType(pool, 'sales_tickets', 'sale_payment_method');
+  const expectedType = "enum('efectivo','tarjeta','cuenta')";
+
+  if (currentType === expectedType) {
+    console.log('[core-schema] sales_tickets.sale_payment_method tipo OK');
+    return;
+  }
+
+  await pool.query(`
+    UPDATE sales_tickets
+    SET sale_payment_method = 'tarjeta'
+    WHERE sale_payment_method IN ('debito', 'credito')
+  `);
+
+  await pool.query(`
+    ALTER TABLE sales_tickets
+    MODIFY COLUMN sale_payment_method ENUM('efectivo', 'tarjeta', 'cuenta')
+    NOT NULL DEFAULT 'efectivo'
+  `);
+  console.log('[core-schema] sales_tickets.sale_payment_method ajustado');
+}
+
+async function ensureSalesTicketCustomerColumn(pool) {
+  await ensureColumn(
+    pool,
+    'sales_tickets',
+    'customer_id',
+    `
+      ALTER TABLE sales_tickets
+      ADD COLUMN customer_id BIGINT UNSIGNED NULL
+      AFTER user_id
+    `
+  );
 }
 
 async function ensureTables(pool) {
@@ -92,6 +182,8 @@ async function ensureTables(pool) {
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       external_id VARCHAR(64) NULL,
       user_id BIGINT UNSIGNED NULL,
+      customer_id BIGINT UNSIGNED NULL,
+      sale_payment_method ENUM('efectivo', 'tarjeta', 'cuenta') NOT NULL DEFAULT 'efectivo',
       total_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
       items_count INT UNSIGNED NOT NULL DEFAULT 0,
       status ENUM('confirmed', 'cancelled') NOT NULL DEFAULT 'confirmed',
@@ -134,6 +226,37 @@ async function ensureTables(pool) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
   console.log('[core-schema] tabla cash_payments lista');
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS customers (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      name VARCHAR(120) NOT NULL,
+      phone VARCHAR(40) NULL,
+      notes VARCHAR(255) NULL,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+  console.log('[core-schema] tabla customers lista');
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS customer_account_payments (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      external_id VARCHAR(64) NULL,
+      customer_id BIGINT UNSIGNED NOT NULL,
+      user_id BIGINT UNSIGNED NULL,
+      payment_method ENUM('efectivo', 'tarjeta') NOT NULL DEFAULT 'efectivo',
+      amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+      notes VARCHAR(255) NULL,
+      status ENUM('confirmed', 'cancelled') NOT NULL DEFAULT 'confirmed',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+  console.log('[core-schema] tabla customer_account_payments lista');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS scanner_dashboard_daily (
@@ -209,6 +332,9 @@ async function ensureTables(pool) {
 }
 
 async function ensureConstraintsAndIndexes(pool) {
+  await ensureSalesTicketCustomerColumn(pool);
+  await ensureSalesTicketPaymentMethodColumn(pool);
+
   await ensureForeignKey(
     pool,
     'auth_sessions',
@@ -239,6 +365,20 @@ async function ensureConstraintsAndIndexes(pool) {
 
   await ensureForeignKey(
     pool,
+    'sales_tickets',
+    'fk_sales_tickets_customer_id',
+    `
+      ALTER TABLE sales_tickets
+      ADD CONSTRAINT fk_sales_tickets_customer_id
+      FOREIGN KEY (customer_id)
+      REFERENCES customers(id)
+      ON UPDATE CASCADE
+      ON DELETE SET NULL
+    `
+  );
+
+  await ensureForeignKey(
+    pool,
     'sales_ticket_items',
     'fk_sales_ticket_items_sale_id',
     `
@@ -258,6 +398,34 @@ async function ensureConstraintsAndIndexes(pool) {
     `
       ALTER TABLE cash_payments
       ADD CONSTRAINT fk_cash_payments_user_id
+      FOREIGN KEY (user_id)
+      REFERENCES auth_users(id)
+      ON UPDATE CASCADE
+      ON DELETE SET NULL
+    `
+  );
+
+  await ensureForeignKey(
+    pool,
+    'customer_account_payments',
+    'fk_customer_account_payments_customer_id',
+    `
+      ALTER TABLE customer_account_payments
+      ADD CONSTRAINT fk_customer_account_payments_customer_id
+      FOREIGN KEY (customer_id)
+      REFERENCES customers(id)
+      ON UPDATE CASCADE
+      ON DELETE RESTRICT
+    `
+  );
+
+  await ensureForeignKey(
+    pool,
+    'customer_account_payments',
+    'fk_customer_account_payments_user_id',
+    `
+      ALTER TABLE customer_account_payments
+      ADD CONSTRAINT fk_customer_account_payments_user_id
       FOREIGN KEY (user_id)
       REFERENCES auth_users(id)
       ON UPDATE CASCADE
@@ -330,7 +498,10 @@ async function ensureConstraintsAndIndexes(pool) {
   await ensureIndex(pool, 'sales_tickets', 'ux_sales_tickets_external_id', 'ALTER TABLE sales_tickets ADD UNIQUE INDEX ux_sales_tickets_external_id (external_id)');
   await ensureIndex(pool, 'sales_tickets', 'idx_sales_tickets_created_at', 'ALTER TABLE sales_tickets ADD INDEX idx_sales_tickets_created_at (created_at)');
   await ensureIndex(pool, 'sales_tickets', 'idx_sales_tickets_user_created', 'ALTER TABLE sales_tickets ADD INDEX idx_sales_tickets_user_created (user_id, created_at)');
+  await ensureIndex(pool, 'sales_tickets', 'idx_sales_tickets_customer_created', 'ALTER TABLE sales_tickets ADD INDEX idx_sales_tickets_customer_created (customer_id, created_at)');
   await ensureIndex(pool, 'sales_tickets', 'idx_sales_tickets_status_created', 'ALTER TABLE sales_tickets ADD INDEX idx_sales_tickets_status_created (status, created_at)');
+  await ensureIndex(pool, 'sales_tickets', 'idx_sales_tickets_payment_method_created', 'ALTER TABLE sales_tickets ADD INDEX idx_sales_tickets_payment_method_created (sale_payment_method, created_at)');
+  await ensureIndex(pool, 'customers', 'idx_customers_name_active', 'ALTER TABLE customers ADD INDEX idx_customers_name_active (name, is_active)');
 
   await ensureIndex(pool, 'sales_ticket_items', 'idx_sales_ticket_items_sale_id', 'ALTER TABLE sales_ticket_items ADD INDEX idx_sales_ticket_items_sale_id (sale_id)');
   await ensureIndex(pool, 'sales_ticket_items', 'idx_sales_ticket_items_product_id', 'ALTER TABLE sales_ticket_items ADD INDEX idx_sales_ticket_items_product_id (product_id)');
@@ -340,6 +511,10 @@ async function ensureConstraintsAndIndexes(pool) {
   await ensureIndex(pool, 'cash_payments', 'idx_cash_payments_created_at', 'ALTER TABLE cash_payments ADD INDEX idx_cash_payments_created_at (created_at)');
   await ensureIndex(pool, 'cash_payments', 'idx_cash_payments_user_created', 'ALTER TABLE cash_payments ADD INDEX idx_cash_payments_user_created (user_id, created_at)');
   await ensureIndex(pool, 'cash_payments', 'idx_cash_payments_status_created', 'ALTER TABLE cash_payments ADD INDEX idx_cash_payments_status_created (status, created_at)');
+  await ensureIndex(pool, 'customer_account_payments', 'ux_customer_account_payments_external_id', 'ALTER TABLE customer_account_payments ADD UNIQUE INDEX ux_customer_account_payments_external_id (external_id)');
+  await ensureIndex(pool, 'customer_account_payments', 'idx_customer_account_payments_customer_status_created', 'ALTER TABLE customer_account_payments ADD INDEX idx_customer_account_payments_customer_status_created (customer_id, status, created_at)');
+  await ensureIndex(pool, 'customer_account_payments', 'idx_customer_account_payments_method_created', 'ALTER TABLE customer_account_payments ADD INDEX idx_customer_account_payments_method_created (payment_method, created_at)');
+  await ensureIndex(pool, 'customer_account_payments', 'idx_customer_account_payments_user_created', 'ALTER TABLE customer_account_payments ADD INDEX idx_customer_account_payments_user_created (user_id, created_at)');
   await ensureIndex(pool, 'scanner_dashboard_daily', 'idx_scanner_dashboard_daily_updated_at', 'ALTER TABLE scanner_dashboard_daily ADD INDEX idx_scanner_dashboard_daily_updated_at (updated_at)');
   await ensureIndex(pool, 'scanner_monthly_week_overrides', 'idx_scanner_monthly_week_overrides_updated_at', 'ALTER TABLE scanner_monthly_week_overrides ADD INDEX idx_scanner_monthly_week_overrides_updated_at (updated_at)');
   await ensureIndex(pool, 'scanner_diagnostic_events', 'idx_scanner_diagnostic_events_created_at', 'ALTER TABLE scanner_diagnostic_events ADD INDEX idx_scanner_diagnostic_events_created_at (created_at)');

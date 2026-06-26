@@ -3,14 +3,18 @@ import { requireAuth, requirePermission } from '../auth/auth.middleware.js';
 import { PERMISSIONS } from '../auth/auth.rbac.js';
 import {
   scannerCreateDiagnosticEventController,
+  scannerCreateCustomerAccountPaymentController,
+  scannerCreateCustomerController,
   scannerCreateProductController,
   scannerCreatePaymentController,
   scannerCreateSaleController,
   scannerCreateStockRequestController,
   scannerDashboardController,
   scannerDashboardStreamController,
+  scannerCustomerDetailController,
   scannerListDiagnosticEventsController,
   scannerListController,
+  scannerListCustomersController,
   scannerListStockRequestsController,
   scannerMonthlySummaryController,
   scannerUpdateMonthlyWeekOverrideController,
@@ -28,6 +32,10 @@ const router = Router();
 router.get('/products', scannerListController);
 router.get('/products/lookup', scannerLookupController);
 router.use(requireAuth);
+router.get('/customers', requirePermission(PERMISSIONS.CUSTOMER_READ), scannerListCustomersController);
+router.get('/customers/:id', requirePermission(PERMISSIONS.CUSTOMER_READ), scannerCustomerDetailController);
+router.post('/customers', requirePermission(PERMISSIONS.CUSTOMER_CREATE), scannerCreateCustomerController);
+router.post('/customers/:id/payments', requirePermission(PERMISSIONS.CUSTOMER_PAYMENT_CREATE), scannerCreateCustomerAccountPaymentController);
 router.post('/products', requirePermission(PERMISSIONS.SCANNER_PRODUCT_CREATE), scannerCreateProductController);
 router.put('/products/:id', requirePermission(PERMISSIONS.SCANNER_PRODUCT_UPDATE), scannerUpdateProductController);
 router.post('/live-state', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerUpdateLiveStateController);

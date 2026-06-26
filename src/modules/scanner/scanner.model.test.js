@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  normalizeCustomerAccountPaymentPayload,
   normalizeDashboardInitialCashPayload,
   normalizeDashboardParams,
   normalizePaymentPayload,
@@ -79,6 +80,8 @@ describe('normalizeSalePayload', () => {
     const result = normalizeSalePayload({
       externalId: 'sale-1',
       userId: 12,
+      paymentMethod: 'tarjeta',
+      customerId: null,
       notes: 'Venta de prueba',
       items: [
         {
@@ -99,6 +102,7 @@ describe('normalizeSalePayload', () => {
 
     expect(result.external_id).toBe('sale-1');
     expect(result.user_id).toBe(12);
+    expect(result.sale_payment_method).toBe('tarjeta');
     expect(result.items_count).toBe(3);
     expect(result.total_amount).toBe(251);
     expect(result.items).toEqual([
@@ -125,6 +129,89 @@ describe('normalizeSalePayload', () => {
 
   it('rejects empty sale items', () => {
     expect(() => normalizeSalePayload({ items: [] })).toThrow('La venta debe incluir al menos un item');
+  });
+
+  it('falls back to efectivo when paymentMethod is unknown', () => {
+    const result = normalizeSalePayload({
+      paymentMethod: 'transferencia',
+      items: [
+        {
+          nombre: 'Yerba',
+          precio_venta: 100,
+          quantity: 1
+        }
+      ]
+    });
+
+    expect(result.sale_payment_method).toBe('efectivo');
+  });
+
+  it('maps debito and credito to tarjeta', () => {
+    const debito = normalizeSalePayload({
+      paymentMethod: 'debito',
+      items: [{ nombre: 'Yerba', precio_venta: 100, quantity: 1 }]
+    });
+    const credito = normalizeSalePayload({
+      paymentMethod: 'credito',
+      items: [{ nombre: 'Cafe', precio_venta: 200, quantity: 1 }]
+    });
+
+    expect(debito.sale_payment_method).toBe('tarjeta');
+    expect(credito.sale_payment_method).toBe('tarjeta');
+  });
+
+  it('requires customerId for ventas en cuenta', () => {
+    expect(() => normalizeSalePayload({
+      paymentMethod: 'cuenta',
+      items: [{ nombre: 'Yerba', precio_venta: 100, quantity: 1 }]
+    })).toThrow('customerId requerido para ventas en cuenta');
+  });
+});
+
+describe('customer payloads', () => {
+  it('normalizes valid customer payloads', async () => {
+    const { normalizeCustomerCreatePayload, normalizeCustomerId } = await import('./scanner.model.js');
+
+    expect(normalizeCustomerCreatePayload({
+      name: 'Juan Perez',
+      phone: '099123123',
+      notes: 'Compra en cuenta'
+    })).toEqual({
+      name: 'Juan Perez',
+      phone: '099123123',
+      notes: 'Compra en cuenta'
+    });
+
+    expect(normalizeCustomerId('7')).toBe(7);
+  });
+
+  it('normalizes customer account payments', () => {
+    expect(normalizeCustomerAccountPaymentPayload({
+      externalId: 'cap-1',
+      customerId: '7',
+      userId: '2',
+      paymentMethod: 'credito',
+      amount: '450.50',
+      notes: 'Pago parcial'
+    })).toEqual({
+      external_id: 'cap-1',
+      customer_id: 7,
+      user_id: 2,
+      payment_method: 'tarjeta',
+      amount: 450.5,
+      notes: 'Pago parcial'
+    });
+  });
+
+  it('rejects invalid customer account payments', () => {
+    expect(() => normalizeCustomerAccountPaymentPayload({
+      customerId: '',
+      amount: '10'
+    })).toThrow('customerId invalido');
+    expect(() => normalizeCustomerAccountPaymentPayload({
+      customerId: '2',
+      amount: '0'
+    })).toThrow('Monto de pago invalido');
   });
 });
 

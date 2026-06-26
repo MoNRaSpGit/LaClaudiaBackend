@@ -32,6 +32,32 @@ Backend estable para lookup y listado inicial de productos, conectado a BDD2 (`b
 
 ## Mini Changelog Tecnico (2026-04-27)
 
+- Cuenta corriente + medios de cobro consolidados (2026-06-24):
+  - `sales_tickets.sale_payment_method` queda normalizado a:
+    - `efectivo`
+    - `tarjeta`
+    - `cuenta`
+  - `debito` y `credito` se absorben en `tarjeta`.
+  - nueva tabla `customers`.
+  - nueva columna `sales_tickets.customer_id`.
+  - nueva FK `fk_sales_tickets_customer_id`.
+  - nuevo indice `idx_sales_tickets_customer_created`.
+  - nuevo indice `idx_customers_name_active`.
+  - nuevas rutas:
+    - `GET /api/scanner/customers`
+    - `GET /api/scanner/customers/:id`
+    - `POST /api/scanner/customers`
+  - nuevo criterio de validacion:
+    - si una venta usa `paymentMethod = cuenta`, `customerId` es obligatorio.
+    - si el cliente no existe o esta inactivo, la venta se rechaza.
+  - dashboard y resumenes ya discriminan ventas por medio de cobro.
+  - fix aplicado:
+    - se corrigio el `INSERT` de `createSaleTicket` para alinear placeholders con `customer_id`, `sale_payment_method`, `items_count` y `notes`.
+    - se corrigio el armado de detalle de cliente para leer `debt_total`, `account_sales_count` y `last_account_sale_at` con nombres reales de repository.
+  - validacion tecnica:
+    - `npm run test` OK.
+    - `npm run db:prepare:core` OK.
+
 - Stock requests persistentes + ranking acotado (2026-05-05):
   - nuevo soporte backend para pedidos de stock reales entre operario y admin.
   - nuevas tablas:
@@ -228,10 +254,24 @@ Estamos en etapa de consolidar logica de caja y ventas en frontend, para luego b
 1. Endpoint para `barcode no encontrado` + alta rapida de producto manual real.
 2. Alta/baja de permisos por feature desde config/env si se requiere modo emergencia.
 3. Endpoint de alta de usuarios/roles con auditoria minima.
+4. Definir flujo de cancelacion o pago parcial de deuda para `Cuenta corriente`.
+5. Limpiar ventas de prueba hechas despues de las `22:00` cuando termine la validacion manual.
 
 ## En que quedamos
 
 - hacer text manuales   y ver q errores salen
+
+## Nota operativa 2026-06-24
+
+- El trabajo publicable actual se esta haciendo en el arbol limpio:
+  - `LaClaudia-backend-public`
+- No mezclar con el arbol local `backend/` usado como laboratorio previo.
+- Si entra un agente nuevo manana, mirar primero:
+  - `src/scripts/ensureCoreSchema.js`
+  - `src/modules/scanner/scanner.model.js`
+  - `src/modules/scanner/scanner.repository.js`
+  - `src/modules/scanner/scanner.service.js`
+  - `src/modules/scanner/scanner.routes.js`
 
 ## Paquete local en validacion - eventos de diagnostico scanner
 

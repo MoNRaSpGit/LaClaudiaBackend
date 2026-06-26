@@ -216,18 +216,22 @@ export async function createSaleTicket(salePayload) {
 
     const [ticketResult] = await connection.query(
       `
-        INSERT INTO sales_tickets (
-          external_id,
-          user_id,
+      INSERT INTO sales_tickets (
+        external_id,
+        user_id,
+        customer_id,
+        sale_payment_method,
           total_amount,
-          items_count,
-          status,
-          notes
-        ) VALUES (?, ?, ?, ?, 'confirmed', ?)
+        items_count,
+        status,
+        notes
+        ) VALUES (?, ?, ?, ?, ?, ?, 'confirmed', ?)
       `,
       [
         salePayload.external_id,
         salePayload.user_id,
+        salePayload.customer_id,
+        salePayload.sale_payment_method,
         salePayload.total_amount,
         salePayload.items_count,
         salePayload.notes
@@ -250,6 +254,8 @@ export async function createSaleTicket(salePayload) {
     return {
       id: saleId,
       external_id: salePayload.external_id,
+      customer_id: salePayload.customer_id,
+      sale_payment_method: salePayload.sale_payment_method,
       total_amount: salePayload.total_amount,
       items_count: salePayload.items_count,
       created_at: new Date().toISOString()
@@ -298,6 +304,42 @@ export async function createCashPayment(paymentPayload) {
   };
 }
 
+export async function createCustomerAccountPayment(paymentPayload) {
+  const pool = getDbPoolOrThrow();
+  const [result] = await pool.query(
+    `
+      INSERT INTO customer_account_payments (
+        external_id,
+        customer_id,
+        user_id,
+        payment_method,
+        amount,
+        notes,
+        status
+      ) VALUES (?, ?, ?, ?, ?, ?, 'confirmed')
+    `,
+    [
+      paymentPayload.external_id,
+      paymentPayload.customer_id,
+      paymentPayload.user_id,
+      paymentPayload.payment_method,
+      paymentPayload.amount,
+      paymentPayload.notes
+    ]
+  );
+
+  return {
+    id: Number(result.insertId),
+    external_id: paymentPayload.external_id,
+    customer_id: paymentPayload.customer_id,
+    user_id: paymentPayload.user_id,
+    payment_method: paymentPayload.payment_method,
+    amount: paymentPayload.amount,
+    notes: paymentPayload.notes,
+    created_at: new Date().toISOString()
+  };
+}
+
 export async function sumConfirmedSalesBetween(startDate, endDate) {
   const pool = getDbPoolOrThrow();
   const [rows] = await pool.query(
@@ -313,6 +355,25 @@ export async function sumConfirmedSalesBetween(startDate, endDate) {
   return Number(rows[0]?.total || 0);
 }
 
+export async function sumConfirmedSalesByPaymentMethodBetween(startDate, endDate) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        sale_payment_method,
+        COALESCE(SUM(total_amount), 0) AS total
+      FROM sales_tickets
+      WHERE status = 'confirmed'
+        AND created_at >= ?
+        AND created_at < ?
+      GROUP BY sale_payment_method
+    `,
+    [startDate, endDate]
+  );
+
+  return rows;
+}
+
 export async function sumConfirmedPaymentsBetween(startDate, endDate) {
   const pool = getDbPoolOrThrow();
   const [rows] = await pool.query(
@@ -324,6 +385,75 @@ export async function sumConfirmedPaymentsBetween(startDate, endDate) {
         AND created_at < ?
     `,
     [startDate, endDate]
+  );
+  return Number(rows[0]?.total || 0);
+}
+
+export async function sumConfirmedCustomerAccountPaymentsBetween(startDate, endDate) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT COALESCE(SUM(amount), 0) AS total
+      FROM customer_account_payments
+      WHERE status = 'confirmed'
+        AND created_at >= ?
+        AND created_at < ?
+    `,
+    [startDate, endDate]
+  );
+  return Number(rows[0]?.total || 0);
+}
+
+export async function sumConfirmedCustomerAccountPaymentsByMethodBetween(startDate, endDate) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        payment_method,
+        COALESCE(SUM(amount), 0) AS total
+      FROM customer_account_payments
+      WHERE status = 'confirmed'
+        AND created_at >= ?
+        AND created_at < ?
+      GROUP BY payment_method
+    `,
+    [startDate, endDate]
+  );
+  return rows;
+}
+
+export async function getTotalOutstandingCustomerDebt() {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT COALESCE(SUM(customer_balance), 0) AS total
+      FROM (
+        SELECT
+          c.id,
+          GREATEST(
+            COALESCE(sales.total_sales, 0) - COALESCE(payments.total_payments, 0),
+            0
+          ) AS customer_balance
+        FROM customers c
+        LEFT JOIN (
+          SELECT
+            customer_id,
+            SUM(total_amount) AS total_sales
+          FROM sales_tickets
+          WHERE status = 'confirmed'
+            AND sale_payment_method = 'cuenta'
+          GROUP BY customer_id
+        ) sales ON sales.customer_id = c.id
+        LEFT JOIN (
+          SELECT
+            customer_id,
+            SUM(amount) AS total_payments
+          FROM customer_account_payments
+          WHERE status = 'confirmed'
+          GROUP BY customer_id
+        ) payments ON payments.customer_id = c.id
+      ) balances
+    `
   );
   return Number(rows[0]?.total || 0);
 }
@@ -350,6 +480,7 @@ export async function listSalesMovementsBetween(startDate, endDate, limit) {
     `
       SELECT
         id,
+        sale_payment_method,
         total_amount,
         created_at
       FROM sales_tickets
@@ -409,6 +540,31 @@ export async function listPaymentMovementsBetween(startDate, endDate, limit) {
   return rows;
 }
 
+export async function listCustomerAccountPaymentMovementsBetween(startDate, endDate, limit) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        cap.id,
+        cap.customer_id,
+        cap.payment_method,
+        cap.amount,
+        cap.notes,
+        cap.created_at,
+        c.name AS customer_name
+      FROM customer_account_payments cap
+      INNER JOIN customers c ON c.id = cap.customer_id
+      WHERE cap.status = 'confirmed'
+        AND cap.created_at >= ?
+        AND cap.created_at < ?
+      ORDER BY cap.created_at DESC, cap.id DESC
+      LIMIT ?
+    `,
+    [startDate, endDate, limit]
+  );
+  return rows;
+}
+
 export async function listRankingBetween(startDate, endDate, limit) {
   const pool = getDbPoolOrThrow();
   const tableName = escapeId(env.productsTable);
@@ -459,12 +615,13 @@ export async function listDailySalesTotalsBetween(startDate, endDate) {
     `
       SELECT
         DATE(CONVERT_TZ(created_at, '+00:00', '-03:00')) AS business_date,
+        sale_payment_method,
         COALESCE(SUM(total_amount), 0) AS total
       FROM sales_tickets
       WHERE status = 'confirmed'
         AND created_at >= ?
         AND created_at < ?
-      GROUP BY DATE(CONVERT_TZ(created_at, '+00:00', '-03:00'))
+      GROUP BY DATE(CONVERT_TZ(created_at, '+00:00', '-03:00')), sale_payment_method
       ORDER BY business_date DESC
     `,
     [startDate, endDate]
@@ -488,6 +645,139 @@ export async function listDailyPaymentTotalsBetween(startDate, endDate) {
       ORDER BY business_date DESC
     `,
     [startDate, endDate]
+  );
+
+  return rows;
+}
+
+export async function createCustomer(payload) {
+  const pool = getDbPoolOrThrow();
+  const [result] = await pool.query(
+    `
+      INSERT INTO customers (
+        name,
+        phone,
+        notes,
+        is_active
+      ) VALUES (?, ?, ?, 1)
+    `,
+    [payload.name, payload.phone, payload.notes]
+  );
+
+  return Number(result?.insertId || 0);
+}
+
+export async function findCustomerById(customerId) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        id,
+        name,
+        phone,
+        notes,
+        is_active,
+        created_at,
+        updated_at
+      FROM customers
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [customerId]
+  );
+
+  return rows[0] || null;
+}
+
+export async function listCustomersWithDebt() {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        c.id,
+        c.name,
+        c.phone,
+        c.notes,
+        c.is_active,
+        c.created_at,
+        c.updated_at,
+        GREATEST(COALESCE(sales.total_sales, 0) - COALESCE(payments.total_payments, 0), 0) AS debt_total,
+        COALESCE(sales.account_sales_count, 0) AS account_sales_count,
+        COALESCE(payments.account_payments_total, 0) AS account_payments_total,
+        COALESCE(payments.account_payments_count, 0) AS account_payments_count,
+        sales.last_account_sale_at,
+        payments.last_account_payment_at
+      FROM customers c
+      LEFT JOIN (
+        SELECT
+          customer_id,
+          SUM(total_amount) AS total_sales,
+          COUNT(*) AS account_sales_count,
+          MAX(created_at) AS last_account_sale_at
+        FROM sales_tickets
+        WHERE status = 'confirmed'
+          AND sale_payment_method = 'cuenta'
+        GROUP BY customer_id
+      ) sales ON sales.customer_id = c.id
+      LEFT JOIN (
+        SELECT
+          customer_id,
+          SUM(amount) AS total_payments,
+          SUM(amount) AS account_payments_total,
+          COUNT(*) AS account_payments_count,
+          MAX(created_at) AS last_account_payment_at
+        FROM customer_account_payments
+        WHERE status = 'confirmed'
+        GROUP BY customer_id
+      ) payments ON payments.customer_id = c.id
+      ORDER BY c.name ASC, c.id ASC
+    `
+  );
+
+  return rows;
+}
+
+export async function listCustomerAccountSales(customerId, limit = 20) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        id,
+        external_id,
+        total_amount,
+        items_count,
+        created_at
+      FROM sales_tickets
+      WHERE customer_id = ?
+        AND status = 'confirmed'
+        AND sale_payment_method = 'cuenta'
+      ORDER BY created_at DESC, id DESC
+      LIMIT ?
+    `,
+    [customerId, limit]
+  );
+
+  return rows;
+}
+
+export async function listCustomerAccountPayments(customerId, limit = 20) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        id,
+        external_id,
+        payment_method,
+        amount,
+        notes,
+        created_at
+      FROM customer_account_payments
+      WHERE customer_id = ?
+        AND status = 'confirmed'
+      ORDER BY created_at DESC, id DESC
+      LIMIT ?
+    `,
+    [customerId, limit]
   );
 
   return rows;
