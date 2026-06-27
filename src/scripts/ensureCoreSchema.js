@@ -270,6 +270,18 @@ async function ensureTables(pool) {
   console.log('[core-schema] tabla scanner_dashboard_daily lista');
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS scanner_dashboard_next_day_preloads (
+      target_business_date DATE NOT NULL,
+      initial_cash DECIMAL(12,2) NOT NULL DEFAULT 0,
+      created_by_user_id BIGINT UNSIGNED NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (target_business_date)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+  console.log('[core-schema] tabla scanner_dashboard_next_day_preloads lista');
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS scanner_monthly_week_overrides (
       month_key CHAR(7) NOT NULL,
       week_number TINYINT UNSIGNED NOT NULL,
@@ -449,6 +461,20 @@ async function ensureConstraintsAndIndexes(pool) {
 
   await ensureForeignKey(
     pool,
+    'scanner_dashboard_next_day_preloads',
+    'fk_scanner_dashboard_next_day_preloads_created_by_user_id',
+    `
+      ALTER TABLE scanner_dashboard_next_day_preloads
+      ADD CONSTRAINT fk_scanner_dashboard_next_day_preloads_created_by_user_id
+      FOREIGN KEY (created_by_user_id)
+      REFERENCES auth_users(id)
+      ON UPDATE CASCADE
+      ON DELETE SET NULL
+    `
+  );
+
+  await ensureForeignKey(
+    pool,
     'stock_requests',
     'fk_stock_requests_requested_by_user_id',
     `
@@ -516,6 +542,7 @@ async function ensureConstraintsAndIndexes(pool) {
   await ensureIndex(pool, 'customer_account_payments', 'idx_customer_account_payments_method_created', 'ALTER TABLE customer_account_payments ADD INDEX idx_customer_account_payments_method_created (payment_method, created_at)');
   await ensureIndex(pool, 'customer_account_payments', 'idx_customer_account_payments_user_created', 'ALTER TABLE customer_account_payments ADD INDEX idx_customer_account_payments_user_created (user_id, created_at)');
   await ensureIndex(pool, 'scanner_dashboard_daily', 'idx_scanner_dashboard_daily_updated_at', 'ALTER TABLE scanner_dashboard_daily ADD INDEX idx_scanner_dashboard_daily_updated_at (updated_at)');
+  await ensureIndex(pool, 'scanner_dashboard_next_day_preloads', 'idx_scanner_dashboard_next_day_preloads_updated_at', 'ALTER TABLE scanner_dashboard_next_day_preloads ADD INDEX idx_scanner_dashboard_next_day_preloads_updated_at (updated_at)');
   await ensureIndex(pool, 'scanner_monthly_week_overrides', 'idx_scanner_monthly_week_overrides_updated_at', 'ALTER TABLE scanner_monthly_week_overrides ADD INDEX idx_scanner_monthly_week_overrides_updated_at (updated_at)');
   await ensureIndex(pool, 'scanner_diagnostic_events', 'idx_scanner_diagnostic_events_created_at', 'ALTER TABLE scanner_diagnostic_events ADD INDEX idx_scanner_diagnostic_events_created_at (created_at)');
   await ensureIndex(pool, 'scanner_diagnostic_events', 'idx_scanner_diagnostic_events_event_type', 'ALTER TABLE scanner_diagnostic_events ADD INDEX idx_scanner_diagnostic_events_event_type (event_type, created_at)');

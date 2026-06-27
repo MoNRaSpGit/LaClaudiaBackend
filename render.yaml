@@ -4,5 +4,5 @@
     env: node
     plan: free
     buildCommand: npm install
-    startCommand: npm start
+    startCommand: npm run db:prepare:core && npm start
     autoDeploy: true

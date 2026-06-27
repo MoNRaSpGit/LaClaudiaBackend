@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  INITIAL_CASH_PRELOAD_OPEN_HOUR,
+  getNextStoreDateLabel,
+  getStoreDateLabelForDate,
+  isInitialCashPreloadWindowOpen,
   normalizeCustomerAccountPaymentPayload,
   normalizeDashboardInitialCashPayload,
   normalizeDashboardParams,
@@ -165,6 +169,20 @@ describe('normalizeSalePayload', () => {
       paymentMethod: 'cuenta',
       items: [{ nombre: 'Yerba', precio_venta: 100, quantity: 1 }]
     })).toThrow('customerId requerido para ventas en cuenta');
+  });
+});
+
+describe('initial cash preload window helpers', () => {
+  it('opens preload window at 22:00 store time', () => {
+    expect(isInitialCashPreloadWindowOpen(new Date('2026-06-28T00:59:59.000Z'))).toBe(false);
+    expect(isInitialCashPreloadWindowOpen(new Date('2026-06-28T01:00:00.000Z'))).toBe(true);
+    expect(INITIAL_CASH_PRELOAD_OPEN_HOUR).toBe(22);
+  });
+
+  it('computes current and next store date labels in Montevideo time', () => {
+    const date = new Date('2026-06-28T01:15:00.000Z');
+    expect(getStoreDateLabelForDate(date)).toBe('2026-06-27');
+    expect(getNextStoreDateLabel(date)).toBe('2026-06-28');
   });
 });
 

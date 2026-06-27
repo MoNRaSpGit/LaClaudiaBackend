@@ -7,6 +7,7 @@ import {
   getScannerDiagnosticEvents,
   getScannerDashboard,
   getScannerDashboardInitialCash,
+  getScannerDashboardInitialCashPreload,
   getScannerMonthlySummary,
   getScannerTopSellingRanking,
   getScannerProducts,
@@ -20,6 +21,7 @@ import {
   updateUserStockRequest,
   updateScannerMonthlyWeekOverride,
   updateScannerDashboardInitialCash,
+  updateScannerDashboardInitialCashPreload,
   updateScannerProduct
 } from './scanner.service.js';
 import {
@@ -203,6 +205,18 @@ export async function scannerGetDashboardInitialCashController(req, res, next) {
   }
 }
 
+export async function scannerGetDashboardInitialCashPreloadController(req, res, next) {
+  try {
+    const settings = await getScannerDashboardInitialCashPreload(req.query || {}, req.auth?.user || {});
+    res.json({
+      ok: true,
+      settings
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function scannerTopSellingRankingController(req, res, next) {
   try {
     const ranking = await getScannerTopSellingRanking(req.query || {});
@@ -298,6 +312,18 @@ export async function scannerUpdateDashboardInitialCashController(req, res, next
       settings
     });
     notifyDashboardChanged().catch(() => {});
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerUpdateDashboardInitialCashPreloadController(req, res, next) {
+  try {
+    const settings = await updateScannerDashboardInitialCashPreload(req.body || {}, req.query || {}, req.auth?.user || {});
+    res.json({
+      ok: true,
+      settings
+    });
   } catch (error) {
     next(error);
   }

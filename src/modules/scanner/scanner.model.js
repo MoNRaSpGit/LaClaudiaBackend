@@ -3,6 +3,7 @@ export function normalizeBarcode(rawBarcode) {
 }
 
 const STORE_TIME_ZONE = 'America/Montevideo';
+export const INITIAL_CASH_PRELOAD_OPEN_HOUR = 22;
 
 export function normalizeLimit(rawLimit) {
   const parsed = Number(rawLimit);
@@ -202,6 +203,15 @@ function getStoreTodayDateLabel() {
   return toDateLabelFromParts(parts.year, parts.month, parts.day);
 }
 
+export function getCurrentStoreDateLabel() {
+  return getStoreTodayDateLabel();
+}
+
+export function getStoreDateLabelForDate(date = new Date()) {
+  const parts = getDatePartsInTimeZone(date, STORE_TIME_ZONE);
+  return toDateLabelFromParts(parts.year, parts.month, parts.day);
+}
+
 function shiftDateLabel(dateLabel, days) {
   const parsed = parseDateOnly(dateLabel);
   if (!parsed) {
@@ -319,6 +329,19 @@ export function normalizeSalePayload(rawPayload) {
     total_amount: totalAmount,
     items
   };
+}
+
+export function getNextStoreDateLabel(date = new Date()) {
+  return shiftDateLabel(getStoreDateLabelForDate(date), 1);
+}
+
+export function isInitialCashPreloadWindowOpen(date = new Date()) {
+  const parts = getDatePartsInTimeZone(date, STORE_TIME_ZONE);
+  return Number(parts.hour || 0) >= INITIAL_CASH_PRELOAD_OPEN_HOUR;
+}
+
+export function getStoreDateParts(date = new Date()) {
+  return getDatePartsInTimeZone(date, STORE_TIME_ZONE);
 }
 
 export function normalizeCustomerCreatePayload(rawPayload) {

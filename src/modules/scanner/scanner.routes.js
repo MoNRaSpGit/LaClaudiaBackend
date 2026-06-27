@@ -11,6 +11,7 @@ import {
   scannerCreateStockRequestController,
   scannerDashboardController,
   scannerGetDashboardInitialCashController,
+  scannerGetDashboardInitialCashPreloadController,
   scannerDashboardStreamController,
   scannerCustomerDetailController,
   scannerListDiagnosticEventsController,
@@ -23,6 +24,7 @@ import {
   scannerResolveStockRequestController,
   scannerTopSellingRankingController,
   scannerUpdateDashboardInitialCashController,
+  scannerUpdateDashboardInitialCashPreloadController,
   scannerUpdateStockRequestController,
   scannerUpdateProductController,
   scannerUpdateLiveStateController
@@ -49,11 +51,13 @@ router.put('/stock-requests/:id/resolve', requirePermission(PERMISSIONS.STOCK_RE
 router.get('/dashboard/ranking', requirePermission(PERMISSIONS.SCANNER_RANKING_READ), scannerTopSellingRankingController);
 router.get('/dashboard', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_READ), scannerDashboardController);
 router.get('/dashboard/initial-cash', requirePermission(PERMISSIONS.SCANNER_INITIAL_CASH_READ), scannerGetDashboardInitialCashController);
+router.get('/dashboard/initial-cash/preload', requirePermission(PERMISSIONS.SCANNER_INITIAL_CASH_READ), scannerGetDashboardInitialCashPreloadController);
 router.get('/dashboard/monthly-summary', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_READ), scannerMonthlySummaryController);
 router.put('/dashboard/monthly-summary/week', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_UPDATE), scannerUpdateMonthlyWeekOverrideController);
 router.get('/dashboard/stream', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_READ), scannerDashboardStreamController);
 router.get('/diagnostic-events', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_READ), scannerListDiagnosticEventsController);
 router.put('/dashboard/initial-cash', requirePermission(PERMISSIONS.SCANNER_INITIAL_CASH_UPDATE), scannerUpdateDashboardInitialCashController);
+router.put('/dashboard/initial-cash/preload', requirePermission(PERMISSIONS.SCANNER_INITIAL_CASH_UPDATE), scannerUpdateDashboardInitialCashPreloadController);
 router.post('/payments', requirePermission(PERMISSIONS.SCANNER_PAYMENT_CREATE), scannerCreatePaymentController);
 
 export default router;

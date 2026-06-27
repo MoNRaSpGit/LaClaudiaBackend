@@ -2,6 +2,7 @@ import {
   createProduct,
   createDashboardInitialCashByDateIfMissing,
   createCashPayment,
+  getDashboardNextDayPreloadByDate,
   createCustomerAccountPayment,
   createCustomer,
   createScannerDiagnosticEvent,
@@ -29,6 +30,7 @@ import {
   listRankingBetween,
   listSaleItemsBySaleIds,
   listSalesMovementsBetween,
+  materializeDashboardInitialCashFromPreloadIfNeeded,
   markStockRequestResolved,
   sumConfirmedCustomerAccountPaymentsBetween,
   sumConfirmedCustomerAccountPaymentsByMethodBetween,
@@ -37,6 +39,7 @@ import {
   sumConfirmedSalesByPaymentMethodBetween,
   upsertMonthlyWeekOverride,
   upsertDashboardInitialCashByDate,
+  upsertDashboardNextDayPreloadByDate,
   updateStockRequest,
   updateProductById
 } from './scanner.repository.js';
@@ -47,6 +50,10 @@ import {
   normalizeCustomerId,
   normalizeDashboardParams,
   normalizeDashboardInitialCashPayload,
+  getCurrentStoreDateLabel,
+  getNextStoreDateLabel,
+  INITIAL_CASH_PRELOAD_OPEN_HOUR,
+  isInitialCashPreloadWindowOpen,
   normalizeLimit,
   normalizeMonthlySummaryParams,
   normalizeMonthlyWeekOverridePayload,
@@ -743,10 +750,40 @@ export async function registerScannerPayment(rawPayload) {
   }
 }
 
+async function ensureCurrentDayInitialCashMaterialized(dateLabel) {
+  await materializeDashboardInitialCashFromPreloadIfNeeded(dateLabel);
+}
+
+function toInitialCashSettings({
+  dateLabel,
+  initialCash,
+  canUpdate,
+  nextDateLabel,
+  nextInitialCash,
+  isPreloadWindowOpen
+}) {
+  return {
+    date: dateLabel,
+    initialCash: roundMoney(initialCash),
+    canUpdate: Boolean(canUpdate),
+    isLocked: !canUpdate,
+    preloadOpenHour: INITIAL_CASH_PRELOAD_OPEN_HOUR,
+    preloadWindowOpen: Boolean(isPreloadWindowOpen),
+    nextDate: nextDateLabel,
+    nextInitialCash: roundMoney(nextInitialCash),
+    canPreloadNextDay: Boolean(isPreloadWindowOpen)
+  };
+}
+
 export async function updateScannerDashboardInitialCash(rawPayload, rawQuery) {
   const normalized = normalizeDashboardInitialCashPayload(rawPayload, rawQuery);
   const userRole = String(rawPayload?.authUser?.role || '').trim().toLowerCase();
   const isAdmin = userRole === 'admin';
+  const currentDateLabel = getCurrentStoreDateLabel();
+  const nextDateLabel = getNextStoreDateLabel();
+  const nextPreloadRow = await getDashboardNextDayPreloadByDate(nextDateLabel);
+  const nextInitialCash = Number(nextPreloadRow?.initial_cash || 0);
+  const isPreloadWindowOpen = isInitialCashPreloadWindowOpen();
 
   let updated = null;
 
@@ -769,31 +806,94 @@ export async function updateScannerDashboardInitialCash(rawPayload, rawQuery) {
     };
   }
 
-  return {
-    date: updated.date,
-    initialCash: roundMoney(updated.initial_cash),
-    canUpdate: isAdmin,
-    isLocked: !isAdmin
-  };
+  const effectiveCurrentDate = normalized.dateLabel || currentDateLabel;
+  return toInitialCashSettings({
+    dateLabel: updated.date,
+    initialCash: updated.initial_cash,
+    canUpdate: isAdmin || effectiveCurrentDate !== currentDateLabel ? true : Number(updated.initial_cash || 0) <= 0,
+    nextDateLabel,
+    nextInitialCash,
+    isPreloadWindowOpen
+  });
 }
 
 export async function getScannerDashboardInitialCash(rawQuery, authUser = {}) {
   const params = normalizeDashboardParams(rawQuery);
   const userRole = String(authUser?.role || '').trim().toLowerCase();
   const isAdmin = userRole === 'admin';
+  const currentDateLabel = getCurrentStoreDateLabel();
+  if (params.dateLabel === currentDateLabel) {
+    await ensureCurrentDayInitialCashMaterialized(params.dateLabel);
+  }
+
   const storedInitialCash = roundMoney(await getDashboardInitialCashByDate(params.dateLabel));
   const canUpdate = isAdmin || storedInitialCash <= 0;
+  const nextDateLabel = getNextStoreDateLabel();
+  const nextPreloadRow = await getDashboardNextDayPreloadByDate(nextDateLabel);
 
-  return {
-    date: params.dateLabel,
+  return toInitialCashSettings({
+    dateLabel: params.dateLabel,
     initialCash: storedInitialCash,
     canUpdate,
-    isLocked: !canUpdate
+    nextDateLabel,
+    nextInitialCash: Number(nextPreloadRow?.initial_cash || 0),
+    isPreloadWindowOpen: isInitialCashPreloadWindowOpen()
+  });
+}
+
+export async function getScannerDashboardInitialCashPreload(_rawQuery, _authUser = {}) {
+  const nextDateLabel = getNextStoreDateLabel();
+  const preloadRow = await getDashboardNextDayPreloadByDate(nextDateLabel);
+  const isWindowOpen = isInitialCashPreloadWindowOpen();
+
+  return {
+    targetDate: nextDateLabel,
+    initialCash: roundMoney(preloadRow?.initial_cash || 0),
+    canPreload: isWindowOpen,
+    isWindowOpen,
+    preloadOpenHour: INITIAL_CASH_PRELOAD_OPEN_HOUR
+  };
+}
+
+export async function updateScannerDashboardInitialCashPreload(rawPayload, _rawQuery, authUser = {}) {
+  const userId = Number(authUser?.id || 0) || null;
+  const isWindowOpen = isInitialCashPreloadWindowOpen();
+
+  if (!isWindowOpen) {
+    const error = new Error('La pre-carga de caja se habilita a las 22:00');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const nextDateLabel = getNextStoreDateLabel();
+  const normalized = normalizeDashboardInitialCashPayload({
+    ...rawPayload,
+    date: rawPayload?.date || nextDateLabel
+  }, {});
+
+  if (normalized.dateLabel !== nextDateLabel) {
+    const error = new Error('La pre-carga solo permite cargar la caja del proximo dia');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const updated = await upsertDashboardNextDayPreloadByDate(normalized.dateLabel, normalized.initialCash, userId);
+
+  return {
+    targetDate: nextDateLabel,
+    initialCash: roundMoney(updated?.initial_cash || normalized.initialCash),
+    canPreload: true,
+    isWindowOpen: true,
+    preloadOpenHour: INITIAL_CASH_PRELOAD_OPEN_HOUR
   };
 }
 
 export async function getScannerDashboard(rawQuery) {
   const params = normalizeDashboardParams(rawQuery);
+  const currentDateLabel = getCurrentStoreDateLabel();
+  if (params.dateLabel === currentDateLabel) {
+    await ensureCurrentDayInitialCashMaterialized(params.dateLabel);
+  }
   const storedInitialCash = params.hasInitialCashOverride
     ? roundMoney(params.initialCash)
     : roundMoney(await getDashboardInitialCashByDate(params.dateLabel));

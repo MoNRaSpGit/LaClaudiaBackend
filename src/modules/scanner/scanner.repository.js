@@ -609,6 +609,26 @@ export async function getDashboardInitialCashByDate(dateLabel) {
   return rows[0] ? Number(rows[0].initial_cash || 0) : 0;
 }
 
+export async function getDashboardNextDayPreloadByDate(dateLabel) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        target_business_date,
+        initial_cash,
+        created_by_user_id,
+        created_at,
+        updated_at
+      FROM scanner_dashboard_next_day_preloads
+      WHERE target_business_date = ?
+      LIMIT 1
+    `,
+    [dateLabel]
+  );
+
+  return rows[0] || null;
+}
+
 export async function listDailySalesTotalsBetween(startDate, endDate) {
   const pool = getDbPoolOrThrow();
   const [rows] = await pool.query(
@@ -880,6 +900,125 @@ export async function upsertDashboardInitialCashByDate(dateLabel, initialCash) {
     date: dateLabel,
     initial_cash: Number(initialCash || 0)
   };
+}
+
+export async function upsertDashboardNextDayPreloadByDate(dateLabel, initialCash, createdByUserId = null) {
+  const pool = getDbPoolOrThrow();
+  await pool.query(
+    `
+      INSERT INTO scanner_dashboard_next_day_preloads (
+        target_business_date,
+        initial_cash,
+        created_by_user_id
+      ) VALUES (?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        initial_cash = VALUES(initial_cash),
+        created_by_user_id = VALUES(created_by_user_id)
+    `,
+    [dateLabel, initialCash, createdByUserId]
+  );
+
+  const [rows] = await pool.query(
+    `
+      SELECT
+        target_business_date,
+        initial_cash,
+        created_by_user_id,
+        created_at,
+        updated_at
+      FROM scanner_dashboard_next_day_preloads
+      WHERE target_business_date = ?
+      LIMIT 1
+    `,
+    [dateLabel]
+  );
+
+  return rows[0] || null;
+}
+
+export async function materializeDashboardInitialCashFromPreloadIfNeeded(dateLabel) {
+  const pool = getDbPoolOrThrow();
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const [dailyRows] = await connection.query(
+      `
+        SELECT
+          business_date,
+          initial_cash
+        FROM scanner_dashboard_daily
+        WHERE business_date = ?
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [dateLabel]
+    );
+
+    if (dailyRows[0]) {
+      await connection.commit();
+      return {
+        date: dateLabel,
+        initial_cash: Number(dailyRows[0].initial_cash || 0),
+        materialized: false
+      };
+    }
+
+    const [preloadRows] = await connection.query(
+      `
+        SELECT
+          target_business_date,
+          initial_cash
+        FROM scanner_dashboard_next_day_preloads
+        WHERE target_business_date = ?
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [dateLabel]
+    );
+
+    const preload = preloadRows[0] || null;
+    if (!preload) {
+      await connection.commit();
+      return {
+        date: dateLabel,
+        initial_cash: 0,
+        materialized: false
+      };
+    }
+
+    await connection.query(
+      `
+        INSERT INTO scanner_dashboard_daily (
+          business_date,
+          initial_cash
+        ) VALUES (?, ?)
+      `,
+      [dateLabel, preload.initial_cash]
+    );
+
+    await connection.query(
+      `
+        DELETE FROM scanner_dashboard_next_day_preloads
+        WHERE target_business_date = ?
+        LIMIT 1
+      `,
+      [dateLabel]
+    );
+
+    await connection.commit();
+    return {
+      date: dateLabel,
+      initial_cash: Number(preload.initial_cash || 0),
+      materialized: true
+    };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
 export async function createDashboardInitialCashByDateIfMissing(dateLabel, initialCash) {
