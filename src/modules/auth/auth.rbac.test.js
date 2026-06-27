@@ -18,6 +18,11 @@ describe('roleHasPermission', () => {
     expect(roleHasPermission(ROLES.OPERARIO, PERMISSIONS.SCANNER_RANKING_READ)).toBe(true);
   });
 
+  it('allows operario initial cash permissions', () => {
+    expect(roleHasPermission(ROLES.OPERARIO, PERMISSIONS.SCANNER_INITIAL_CASH_READ)).toBe(true);
+    expect(roleHasPermission(ROLES.OPERARIO, PERMISSIONS.SCANNER_INITIAL_CASH_UPDATE)).toBe(true);
+  });
+
   it('allows operario stock request permissions', () => {
     expect(roleHasPermission(ROLES.OPERARIO, PERMISSIONS.STOCK_REQUEST_CREATE)).toBe(true);
     expect(roleHasPermission(ROLES.OPERARIO, PERMISSIONS.STOCK_REQUEST_READ)).toBe(true);

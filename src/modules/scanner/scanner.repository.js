@@ -882,6 +882,37 @@ export async function upsertDashboardInitialCashByDate(dateLabel, initialCash) {
   };
 }
 
+export async function createDashboardInitialCashByDateIfMissing(dateLabel, initialCash) {
+  const pool = getDbPoolOrThrow();
+  await pool.query(
+    `
+      INSERT IGNORE INTO scanner_dashboard_daily (
+        business_date,
+        initial_cash
+      ) VALUES (?, ?)
+    `,
+    [dateLabel, initialCash]
+  );
+
+  const [rows] = await pool.query(
+    `
+      SELECT
+        business_date,
+        initial_cash
+      FROM scanner_dashboard_daily
+      WHERE business_date = ?
+      LIMIT 1
+    `,
+    [dateLabel]
+  );
+
+  const row = rows[0] || null;
+  return {
+    created: Boolean(row && Number(row.initial_cash || 0) === Number(initialCash || 0)),
+    row
+  };
+}
+
 export async function createScannerDiagnosticEvent(payload) {
   const pool = getDbPoolOrThrow();
   const [result] = await pool.query(

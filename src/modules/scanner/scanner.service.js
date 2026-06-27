@@ -1,5 +1,6 @@
 import {
   createProduct,
+  createDashboardInitialCashByDateIfMissing,
   createCashPayment,
   createCustomerAccountPayment,
   createCustomer,
@@ -744,11 +745,50 @@ export async function registerScannerPayment(rawPayload) {
 
 export async function updateScannerDashboardInitialCash(rawPayload, rawQuery) {
   const normalized = normalizeDashboardInitialCashPayload(rawPayload, rawQuery);
-  const updated = await upsertDashboardInitialCashByDate(normalized.dateLabel, normalized.initialCash);
+  const userRole = String(rawPayload?.authUser?.role || '').trim().toLowerCase();
+  const isAdmin = userRole === 'admin';
+
+  let updated = null;
+
+  if (isAdmin) {
+    updated = await upsertDashboardInitialCashByDate(normalized.dateLabel, normalized.initialCash);
+  } else {
+    const result = await createDashboardInitialCashByDateIfMissing(normalized.dateLabel, normalized.initialCash);
+    const storedInitialCash = Number(result?.row?.initial_cash || 0);
+    const canTreatAsCreated = storedInitialCash === Number(normalized.initialCash || 0);
+
+    if (!canTreatAsCreated) {
+      const error = new Error('La caja inicial de hoy ya fue cargada');
+      error.statusCode = 403;
+      throw error;
+    }
+
+    updated = {
+      date: normalized.dateLabel,
+      initial_cash: storedInitialCash
+    };
+  }
 
   return {
     date: updated.date,
-    initialCash: roundMoney(updated.initial_cash)
+    initialCash: roundMoney(updated.initial_cash),
+    canUpdate: isAdmin,
+    isLocked: !isAdmin
+  };
+}
+
+export async function getScannerDashboardInitialCash(rawQuery, authUser = {}) {
+  const params = normalizeDashboardParams(rawQuery);
+  const userRole = String(authUser?.role || '').trim().toLowerCase();
+  const isAdmin = userRole === 'admin';
+  const storedInitialCash = roundMoney(await getDashboardInitialCashByDate(params.dateLabel));
+  const canUpdate = isAdmin || storedInitialCash <= 0;
+
+  return {
+    date: params.dateLabel,
+    initialCash: storedInitialCash,
+    canUpdate,
+    isLocked: !canUpdate
   };
 }
 

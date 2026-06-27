@@ -6,6 +6,7 @@ import {
   getScannerCustomers,
   getScannerDiagnosticEvents,
   getScannerDashboard,
+  getScannerDashboardInitialCash,
   getScannerMonthlySummary,
   getScannerTopSellingRanking,
   getScannerProducts,
@@ -190,6 +191,18 @@ export async function scannerDashboardController(req, res, next) {
   }
 }
 
+export async function scannerGetDashboardInitialCashController(req, res, next) {
+  try {
+    const settings = await getScannerDashboardInitialCash(req.query || {}, req.auth?.user || {});
+    res.json({
+      ok: true,
+      settings
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function scannerTopSellingRankingController(req, res, next) {
   try {
     const ranking = await getScannerTopSellingRanking(req.query || {});
@@ -276,7 +289,10 @@ export async function scannerResolveStockRequestController(req, res, next) {
 
 export async function scannerUpdateDashboardInitialCashController(req, res, next) {
   try {
-    const settings = await updateScannerDashboardInitialCash(req.body || {}, req.query || {});
+    const settings = await updateScannerDashboardInitialCash({
+      ...(req.body || {}),
+      authUser: req.auth?.user || {}
+    }, req.query || {});
     res.json({
       ok: true,
       settings
