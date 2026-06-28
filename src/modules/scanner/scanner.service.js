@@ -675,6 +675,28 @@ export async function getScannerCustomerDetail(rawCustomerId) {
     listCustomerAccountSales(customerId, 20),
     listCustomerAccountPayments(customerId, 20)
   ]);
+  const saleIds = accountSales.map((sale) => Number(sale.id || 0)).filter((saleId) => saleId > 0);
+  const saleItems = await listSaleItemsBySaleIds(saleIds);
+  const saleItemsBySaleId = new Map();
+
+  saleItems.forEach((item) => {
+    const saleId = Number(item.sale_id || 0);
+    if (!saleId) {
+      return;
+    }
+
+    const current = saleItemsBySaleId.get(saleId) || [];
+    current.push({
+      id: Number(item.id || 0),
+      name: String(item.product_name || '').trim(),
+      quantity: Number(item.quantity || 0),
+      lineTotal: roundMoney(item.line_total),
+      unitPrice: Number(item.quantity || 0) > 0
+        ? roundMoney(Number(item.line_total || 0) / Number(item.quantity || 1))
+        : 0
+    });
+    saleItemsBySaleId.set(saleId, current);
+  });
   const summary = customers.find((item) => Number(item.id || 0) === customerId);
 
   return {
@@ -692,6 +714,7 @@ export async function getScannerCustomerDetail(rawCustomerId) {
       externalId: String(sale.external_id || '').trim(),
       totalAmount: roundMoney(sale.total_amount),
       itemsCount: Number(sale.items_count || 0),
+      items: saleItemsBySaleId.get(Number(sale.id || 0)) || [],
       createdAt: toCanonicalIsoOrNull(sale.created_at)
     })),
     accountPayments: accountPayments.map((payment) => ({
