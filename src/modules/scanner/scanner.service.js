@@ -5,6 +5,7 @@ import {
   getDashboardNextDayPreloadByDate,
   createCustomerAccountPayment,
   createCustomer,
+  deactivateCustomerById,
   createScannerDiagnosticEvent,
   createSaleTicket,
   createStockRequest,
@@ -664,7 +665,7 @@ export async function getScannerCustomers() {
 export async function getScannerCustomerDetail(rawCustomerId) {
   const customerId = normalizeCustomerId(rawCustomerId);
   const customer = await findCustomerById(customerId);
-  if (!customer) {
+  if (!customer || !Number(customer.is_active || 0)) {
     const error = new Error('Cliente no encontrado');
     error.statusCode = 404;
     throw error;
@@ -726,6 +727,28 @@ export async function getScannerCustomerDetail(rawCustomerId) {
       createdAt: toCanonicalIsoOrNull(payment.created_at)
     }))
   };
+}
+
+export async function deleteScannerCustomer(rawCustomerId) {
+  const customerId = normalizeCustomerId(rawCustomerId);
+  const customer = await findCustomerById(customerId);
+  if (!customer || !Number(customer.is_active || 0)) {
+    const error = new Error('Cliente no encontrado');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const customers = await listCustomersWithDebt();
+  const summary = customers.find((item) => Number(item.id || 0) === customerId);
+  const debtTotal = roundMoney(summary?.debt_total ?? summary?.debtTotal ?? 0);
+  if (debtTotal > 0) {
+    const error = new Error('No se puede eliminar un cliente con deuda pendiente');
+    error.statusCode = 409;
+    throw error;
+  }
+
+  await deactivateCustomerById(customerId);
+  return { id: customerId };
 }
 
 export async function registerScannerCustomerAccountPayment(rawPayload) {

@@ -5,6 +5,7 @@ import {
   scannerCreateDiagnosticEventController,
   scannerCreateCustomerAccountPaymentController,
   scannerCreateCustomerController,
+  scannerDeleteCustomerController,
   scannerCreateProductController,
   scannerCreatePaymentController,
   scannerCreateSaleController,
@@ -38,6 +39,7 @@ router.use(requireAuth);
 router.get('/customers', requirePermission(PERMISSIONS.CUSTOMER_READ), scannerListCustomersController);
 router.get('/customers/:id', requirePermission(PERMISSIONS.CUSTOMER_READ), scannerCustomerDetailController);
 router.post('/customers', requirePermission(PERMISSIONS.CUSTOMER_CREATE), scannerCreateCustomerController);
+router.delete('/customers/:id', requirePermission(PERMISSIONS.CUSTOMER_DELETE), scannerDeleteCustomerController);
 router.post('/customers/:id/payments', requirePermission(PERMISSIONS.CUSTOMER_PAYMENT_CREATE), scannerCreateCustomerAccountPaymentController);
 router.post('/products', requirePermission(PERMISSIONS.SCANNER_PRODUCT_CREATE), scannerCreateProductController);
 router.put('/products/:id', requirePermission(PERMISSIONS.SCANNER_PRODUCT_UPDATE), scannerUpdateProductController);

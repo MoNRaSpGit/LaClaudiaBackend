@@ -709,6 +709,22 @@ export async function findCustomerById(customerId) {
   return rows[0] || null;
 }
 
+export async function deactivateCustomerById(customerId) {
+  const pool = getDbPoolOrThrow();
+  const [result] = await pool.query(
+    `
+      UPDATE customers
+      SET is_active = 0,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [customerId]
+  );
+
+  return Number(result?.affectedRows || 0) > 0;
+}
+
 export async function listCustomersWithDebt() {
   const pool = getDbPoolOrThrow();
   const [rows] = await pool.query(
@@ -749,10 +765,11 @@ export async function listCustomersWithDebt() {
         FROM customer_account_payments
         WHERE status = 'confirmed'
         GROUP BY customer_id
-      ) payments ON payments.customer_id = c.id
-      ORDER BY c.name ASC, c.id ASC
-    `
-  );
+        ) payments ON payments.customer_id = c.id
+        WHERE c.is_active = 1
+        ORDER BY c.name ASC, c.id ASC
+      `
+    );
 
   return rows;
 }

@@ -1,5 +1,6 @@
 import {
   createScannerCustomer,
+  deleteScannerCustomer,
   createScannerProduct,
   createUserStockRequest,
   getScannerCustomerDetail,
@@ -128,6 +129,18 @@ export async function scannerCustomerDetailController(req, res, next) {
     res.json({
       ok: true,
       ...detail
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerDeleteCustomerController(req, res, next) {
+  try {
+    const customer = await deleteScannerCustomer(req.params.id);
+    res.json({
+      ok: true,
+      customer
     });
   } catch (error) {
     next(error);
