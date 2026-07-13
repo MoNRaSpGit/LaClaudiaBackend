@@ -57,6 +57,7 @@ import {
   normalizeCustomerId,
   normalizeDashboardParams,
   normalizeDashboardInitialCashPayload,
+  normalizeScannerShiftOpenPayload,
   getCurrentStoreDateLabel,
   getNextStoreDateLabel,
   INITIAL_CASH_PRELOAD_OPEN_HOUR,
@@ -177,8 +178,12 @@ function createDefaultShiftSummary(dateLabel) {
     shiftLabel: getShiftTypeLabel(shiftType),
     status: 'closed',
     isOpen: false,
+    openingCash: 0,
+    shiftOpeningCash: 0,
     salesTotal: 0,
     salesCount: 0,
+    cashSalesTotal: 0,
+    cashTotal: 0,
     paymentSummary: {
       efectivo: 0,
       tarjeta: 0,
@@ -245,8 +250,12 @@ function toShiftSummaryItem(row, dateLabel) {
     shiftLabel: getShiftTypeLabel(row.shift_type),
     status,
     isOpen: status === 'open',
+    openingCash: roundMoney(row.opening_cash),
+    shiftOpeningCash: roundMoney(row.opening_cash),
     salesTotal: roundMoney(row.sales_total),
     salesCount: Number(row.sales_count || 0),
+    cashSalesTotal: 0,
+    cashTotal: 0,
     paymentSummary: createEmptyShiftPaymentSummary(),
     openedAt: toCanonicalIsoUtc(row.opened_at),
     closedAt: toCanonicalIsoUtc(row.closed_at),
@@ -282,6 +291,8 @@ function buildShiftSummary(dateLabel, rows = [], paymentRows = []) {
     shiftLabel: getShiftTypeLabel(shiftType),
     status: 'closed',
     isOpen: false,
+    openingCash: 0,
+    shiftOpeningCash: 0,
     salesTotal: 0,
     salesCount: 0,
     paymentSummary: createEmptyShiftPaymentSummary(),
@@ -292,6 +303,10 @@ function buildShiftSummary(dateLabel, rows = [], paymentRows = []) {
   });
 
   applyShiftPaymentTotals(shifts, paymentRows);
+  shifts.forEach((shift) => {
+    shift.cashSalesTotal = roundMoney(shift.paymentSummary?.efectivo || 0);
+    shift.cashTotal = roundMoney(Number(shift.openingCash || 0) + Number(shift.cashSalesTotal || 0));
+  });
 
   return {
     date: dateLabel,
@@ -1337,19 +1352,13 @@ export async function getScannerShiftState(rawQuery = {}) {
 }
 
 export async function openScannerShiftForUser(rawPayload, authUser = {}) {
-  const normalizedShiftType = normalizeShiftType(rawPayload?.shiftType);
-  if (!normalizedShiftType) {
-    const error = new Error('shiftType invalido');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const businessDate = String(rawPayload?.date || '').trim() || getCurrentStoreDateLabel();
+  const normalized = normalizeScannerShiftOpenPayload(rawPayload);
   const openedByUserId = Number(authUser?.id || 0) || null;
   const shift = await openScannerShift({
-    business_date: businessDate,
-    shift_type: normalizedShiftType,
-    opened_by_user_id: openedByUserId
+    business_date: normalized.dateLabel,
+    shift_type: normalized.shiftType,
+    opened_by_user_id: openedByUserId,
+    opening_cash: normalized.openingCash
   });
 
   return shift;

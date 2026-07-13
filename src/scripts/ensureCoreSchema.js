@@ -158,6 +158,19 @@ async function ensureSalesTicketShiftColumn(pool) {
   );
 }
 
+async function ensureScannerShiftOpeningCashColumn(pool) {
+  await ensureColumn(
+    pool,
+    'scanner_shifts',
+    'opening_cash',
+    `
+      ALTER TABLE scanner_shifts
+      ADD COLUMN opening_cash DECIMAL(12,2) NOT NULL DEFAULT 0
+      AFTER opened_at
+    `
+  );
+}
+
 async function ensureTables(pool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS auth_users (
@@ -219,6 +232,7 @@ async function ensureTables(pool) {
       opened_by_user_id BIGINT UNSIGNED NULL,
       closed_by_user_id BIGINT UNSIGNED NULL,
       opened_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      opening_cash DECIMAL(12,2) NOT NULL DEFAULT 0,
       closed_at DATETIME NULL,
       sales_total DECIMAL(12,2) NOT NULL DEFAULT 0,
       sales_count INT UNSIGNED NOT NULL DEFAULT 0,
@@ -382,6 +396,7 @@ async function ensureConstraintsAndIndexes(pool) {
   await ensureSalesTicketCustomerColumn(pool);
   await ensureSalesTicketPaymentMethodColumn(pool);
   await ensureSalesTicketShiftColumn(pool);
+  await ensureScannerShiftOpeningCashColumn(pool);
 
   await ensureForeignKey(
     pool,

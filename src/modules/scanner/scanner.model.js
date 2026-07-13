@@ -487,6 +487,28 @@ export function normalizeDashboardInitialCashPayload(rawPayload, rawQuery) {
   };
 }
 
+export function normalizeScannerShiftOpenPayload(rawPayload) {
+  const payload = rawPayload || {};
+  const shiftType = normalizeShiftType(payload.shiftType);
+  const dateLabel = parseDateLabel(payload.date) || getStoreTodayDateLabel();
+  const parsedOpeningCash = Number(payload.openingCash);
+  const openingCash = Number.isFinite(parsedOpeningCash) && parsedOpeningCash >= 0 && parsedOpeningCash <= 1000000000
+    ? Number(parsedOpeningCash.toFixed(2))
+    : 0;
+
+  if (!shiftType) {
+    const error = new Error('shiftType invalido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    shiftType,
+    dateLabel,
+    openingCash
+  };
+}
+
 export function normalizeMonthlySummaryParams(rawQuery) {
   const query = rawQuery || {};
   const limitMonths = normalizeIntegerRange(query.limitMonths, 24, 1, 60);

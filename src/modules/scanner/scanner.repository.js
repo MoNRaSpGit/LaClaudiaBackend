@@ -20,20 +20,39 @@ function mapShiftRow(row) {
   return {
     id: Number(row.id || 0),
     business_date: String(row.business_date || '').slice(0, 10),
+    businessDate: String(row.business_date || '').slice(0, 10),
     shift_type: String(row.shift_type || '').trim(),
+    shiftType: String(row.shift_type || '').trim(),
     status: String(row.status || '').trim(),
+    statusLabel: String(row.status || '').trim(),
     opened_by_user_id: row.opened_by_user_id != null ? Number(row.opened_by_user_id) : null,
+    openedByUserId: row.opened_by_user_id != null ? Number(row.opened_by_user_id) : null,
     closed_by_user_id: row.closed_by_user_id != null ? Number(row.closed_by_user_id) : null,
+    closedByUserId: row.closed_by_user_id != null ? Number(row.closed_by_user_id) : null,
     opened_at: row.opened_at || null,
+    openedAt: row.opened_at || null,
     closed_at: row.closed_at || null,
+    closedAt: row.closed_at || null,
+    opening_cash: Number(row.opening_cash || 0),
+    openingCash: Number(row.opening_cash || 0),
+    shift_opening_cash: Number(row.opening_cash || 0),
+    shiftOpeningCash: Number(row.opening_cash || 0),
     sales_total: Number(row.sales_total || 0),
+    salesTotal: Number(row.sales_total || 0),
     sales_count: Number(row.sales_count || 0),
+    salesCount: Number(row.sales_count || 0),
     created_at: row.created_at || null,
+    createdAt: row.created_at || null,
     updated_at: row.updated_at || null,
+    updatedAt: row.updated_at || null,
     opened_by_username: String(row.opened_by_username || '').trim() || null,
+    openedByUsername: String(row.opened_by_username || '').trim() || null,
     opened_by_display_name: String(row.opened_by_display_name || '').trim() || null,
+    openedByDisplayName: String(row.opened_by_display_name || '').trim() || null,
     closed_by_username: String(row.closed_by_username || '').trim() || null,
-    closed_by_display_name: String(row.closed_by_display_name || '').trim() || null
+    closedByUsername: String(row.closed_by_username || '').trim() || null,
+    closed_by_display_name: String(row.closed_by_display_name || '').trim() || null,
+    closedByDisplayName: String(row.closed_by_display_name || '').trim() || null
   };
 }
 
@@ -48,6 +67,7 @@ function buildShiftSelectSql(whereSql = '', tailSql = '') {
       s.closed_by_user_id,
       s.opened_at,
       s.closed_at,
+      s.opening_cash,
       s.sales_total,
       s.sales_count,
       s.created_at,
@@ -517,14 +537,16 @@ export async function openScannerShift(payload) {
           status,
           opened_by_user_id,
           opened_at,
+          opening_cash,
           sales_total,
           sales_count
-        ) VALUES (?, ?, 'open', ?, CURRENT_TIMESTAMP, 0, 0)
+        ) VALUES (?, ?, 'open', ?, CURRENT_TIMESTAMP, ?, 0, 0)
       `,
       [
         payload.business_date,
         payload.shift_type,
-        payload.opened_by_user_id
+        payload.opened_by_user_id,
+        payload.opening_cash
       ]
     );
 
