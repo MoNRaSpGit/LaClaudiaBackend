@@ -431,6 +431,50 @@ export async function listScannerShiftPaymentTotalsByDate(dateLabel) {
   }));
 }
 
+export async function resetScannerShiftsByDate(dateLabel) {
+  const pool = getDbPoolOrThrow();
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const [rows] = await connection.query(
+      `
+        SELECT id
+        FROM scanner_shifts
+        WHERE business_date = ?
+      `,
+      [dateLabel]
+    );
+
+    const shiftIds = rows.map((row) => Number(row.id || 0)).filter((value) => Number.isInteger(value) && value > 0);
+    if (shiftIds.length === 0) {
+      await connection.commit();
+      return {
+        deletedCount: 0
+      };
+    }
+
+    await connection.query(
+      `
+        DELETE FROM scanner_shifts
+        WHERE business_date = ?
+      `,
+      [dateLabel]
+    );
+
+    await connection.commit();
+    return {
+      deletedCount: shiftIds.length
+    };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
 export async function openScannerShift(payload) {
   const pool = getDbPoolOrThrow();
   const connection = await pool.getConnection();

@@ -31,7 +31,8 @@ import {
   scannerUpdateLiveStateController,
   scannerGetShiftStateController,
   scannerOpenShiftController,
-  scannerCloseShiftController
+  scannerCloseShiftController,
+  scannerResetShiftsController
 } from './scanner.controller.js';
 
 const router = Router();
@@ -51,6 +52,7 @@ router.get('/shifts/current', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE)
 router.get('/shifts/today', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_READ), scannerGetShiftStateController);
 router.post('/shifts/open', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerOpenShiftController);
 router.post('/shifts/:id/close', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerCloseShiftController);
+router.post('/shifts/reset', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_UPDATE), scannerResetShiftsController);
 router.post('/sales', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerCreateSaleController);
 router.post('/diagnostic-events', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerCreateDiagnosticEventController);
 router.post('/stock-requests', requirePermission(PERMISSIONS.STOCK_REQUEST_CREATE), scannerCreateStockRequestController);

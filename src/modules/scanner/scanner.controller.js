@@ -21,6 +21,7 @@ import {
   registerScannerSale,
   openScannerShiftForUser,
   closeScannerShiftForUser,
+  resetScannerShiftsForUser,
   resolveUserStockRequest,
   updateUserStockRequest,
   updateScannerMonthlyWeekOverride,
@@ -133,6 +134,19 @@ export async function scannerCloseShiftController(req, res, next) {
     res.json({
       ok: true,
       shift
+    });
+    notifyDashboardChanged().catch(() => {});
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerResetShiftsController(req, res, next) {
+  try {
+    const result = await resetScannerShiftsForUser(req.body || {}, req.auth?.user || {});
+    res.json({
+      ok: true,
+      result
     });
     notifyDashboardChanged().catch(() => {});
   } catch (error) {

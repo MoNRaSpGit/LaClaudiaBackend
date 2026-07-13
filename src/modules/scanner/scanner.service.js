@@ -29,6 +29,7 @@ import {
   listScannerDiagnosticEvents,
   listScannerShiftPaymentTotalsByDate,
   listScannerShiftsByDate,
+  resetScannerShiftsByDate,
   listStockRequests,
   listPaymentMovementsBetween,
   listProducts,
@@ -1364,6 +1365,23 @@ export async function closeScannerShiftForUser(rawShiftId, authUser = {}) {
 
   const closedByUserId = Number(authUser?.id || 0) || null;
   return closeScannerShift(shiftId, closedByUserId);
+}
+
+export async function resetScannerShiftsForUser(rawPayload = {}, authUser = {}) {
+  const userRole = String(authUser?.role || '').trim().toLowerCase();
+  if (userRole !== 'admin') {
+    const error = new Error('No autorizado para esta accion');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const dateLabel = String(rawPayload?.date || '').trim() || getCurrentStoreDateLabel();
+  const result = await resetScannerShiftsByDate(dateLabel);
+
+  return {
+    date: dateLabel,
+    deletedCount: Number(result?.deletedCount || 0)
+  };
 }
 
 export async function createUserStockRequest(rawPayload, authUser = {}) {
