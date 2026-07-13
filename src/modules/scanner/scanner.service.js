@@ -27,6 +27,7 @@ import {
   listDailySalesTotalsBetween,
   listMonthlyWeekOverridesBetween,
   listScannerDiagnosticEvents,
+  listScannerShiftPaymentTotalsByDate,
   listScannerShiftsByDate,
   listStockRequests,
   listPaymentMovementsBetween,
@@ -177,11 +178,57 @@ function createDefaultShiftSummary(dateLabel) {
     isOpen: false,
     salesTotal: 0,
     salesCount: 0,
+    paymentSummary: {
+      efectivo: 0,
+      tarjeta: 0,
+      credito: 0
+    },
     openedAt: null,
     closedAt: null,
     openedBy: null,
     closedBy: null
   }));
+}
+
+function createEmptyShiftPaymentSummary() {
+  return {
+    efectivo: 0,
+    tarjeta: 0,
+    credito: 0
+  };
+}
+
+function normalizeShiftPaymentMethod(rawValue) {
+  const normalized = String(rawValue || '').trim().toLowerCase();
+  if (normalized === 'efectivo' || normalized === 'tarjeta') {
+    return normalized;
+  }
+  if (normalized === 'cuenta' || normalized === 'credito') {
+    return 'credito';
+  }
+  return null;
+}
+
+function applyShiftPaymentTotals(shifts = [], paymentRows = []) {
+  const byId = new Map(shifts.map((shift) => [shift.id, shift]));
+
+  paymentRows.forEach((row) => {
+    const shiftId = Number(row.shift_id || 0);
+    const method = normalizeShiftPaymentMethod(row.sale_payment_method);
+    if (!shiftId || !method) {
+      return;
+    }
+
+    const shift = byId.get(shiftId);
+    if (!shift) {
+      return;
+    }
+
+    shift.paymentSummary = shift.paymentSummary || createEmptyShiftPaymentSummary();
+    shift.paymentSummary[method] = roundMoney(Number(shift.paymentSummary[method] || 0) + Number(row.total_amount || 0));
+  });
+
+  return shifts;
 }
 
 function toShiftSummaryItem(row, dateLabel) {
@@ -199,6 +246,7 @@ function toShiftSummaryItem(row, dateLabel) {
     isOpen: status === 'open',
     salesTotal: roundMoney(row.sales_total),
     salesCount: Number(row.sales_count || 0),
+    paymentSummary: createEmptyShiftPaymentSummary(),
     openedAt: toCanonicalIsoUtc(row.opened_at),
     closedAt: toCanonicalIsoUtc(row.closed_at),
     openedBy: row.opened_by_user_id ? {
@@ -214,7 +262,7 @@ function toShiftSummaryItem(row, dateLabel) {
   };
 }
 
-function buildShiftSummary(dateLabel, rows = []) {
+function buildShiftSummary(dateLabel, rows = [], paymentRows = []) {
   const defaultShifts = createDefaultShiftSummary(dateLabel);
   const byType = new Map(defaultShifts.map((shift) => [shift.shiftType, shift]));
 
@@ -235,11 +283,14 @@ function buildShiftSummary(dateLabel, rows = []) {
     isOpen: false,
     salesTotal: 0,
     salesCount: 0,
+    paymentSummary: createEmptyShiftPaymentSummary(),
     openedAt: null,
     closedAt: null,
     openedBy: null,
     closedBy: null
   });
+
+  applyShiftPaymentTotals(shifts, paymentRows);
 
   return {
     date: dateLabel,
@@ -1085,6 +1136,7 @@ export async function getScannerDashboard(rawQuery) {
   );
   const salesByPaymentMethod = aggregateSalesByPaymentMethod(salesByPaymentMethodRows);
   const customerAccountPaymentsByMethod = aggregateCustomerAccountPaymentsByMethod(customerAccountPaymentsByMethodRows);
+  const shiftPaymentTotalsRows = await listScannerShiftPaymentTotalsByDate(params.dateLabel);
   const physicalCashAmount = roundMoney(
     storedInitialCash
     + Number(salesByPaymentMethod.efectivo || 0)
@@ -1125,7 +1177,7 @@ export async function getScannerDashboard(rawQuery) {
     comparison,
     movements,
     ranking,
-    ...buildShiftSummary(params.dateLabel, shiftRows)
+    ...buildShiftSummary(params.dateLabel, shiftRows, shiftPaymentTotalsRows)
   };
 }
 
@@ -1279,7 +1331,8 @@ export async function updateScannerMonthlyWeekOverride(rawPayload) {
 export async function getScannerShiftState(rawQuery = {}) {
   const dateLabel = String(rawQuery?.date || '').trim() || getCurrentStoreDateLabel();
   const rows = await listScannerShiftsByDate(dateLabel);
-  return buildShiftSummary(dateLabel, rows);
+  const paymentRows = await listScannerShiftPaymentTotalsByDate(dateLabel);
+  return buildShiftSummary(dateLabel, rows, paymentRows);
 }
 
 export async function openScannerShiftForUser(rawPayload, authUser = {}) {

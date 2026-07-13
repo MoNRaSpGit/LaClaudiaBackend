@@ -403,6 +403,34 @@ export async function listScannerShiftsByDate(dateLabel) {
   return rows.map(mapShiftRow);
 }
 
+export async function listScannerShiftPaymentTotalsByDate(dateLabel) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        s.id AS shift_id,
+        st.sale_payment_method,
+        SUM(st.total_amount) AS total_amount,
+        COUNT(*) AS tickets_count
+      FROM scanner_shifts s
+      LEFT JOIN sales_tickets st
+        ON st.shift_id = s.id
+       AND st.status = 'confirmed'
+      WHERE s.business_date = ?
+      GROUP BY s.id, st.sale_payment_method
+      ORDER BY s.id ASC
+    `,
+    [dateLabel]
+  );
+
+  return rows.map((row) => ({
+    shift_id: Number(row.shift_id || 0),
+    sale_payment_method: String(row.sale_payment_method || '').trim(),
+    total_amount: Number(row.total_amount || 0),
+    tickets_count: Number(row.tickets_count || 0)
+  }));
+}
+
 export async function openScannerShift(payload) {
   const pool = getDbPoolOrThrow();
   const connection = await pool.getConnection();
