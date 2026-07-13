@@ -28,7 +28,10 @@ import {
   scannerUpdateDashboardInitialCashPreloadController,
   scannerUpdateStockRequestController,
   scannerUpdateProductController,
-  scannerUpdateLiveStateController
+  scannerUpdateLiveStateController,
+  scannerGetShiftStateController,
+  scannerOpenShiftController,
+  scannerCloseShiftController
 } from './scanner.controller.js';
 
 const router = Router();
@@ -44,6 +47,10 @@ router.post('/customers/:id/payments', requirePermission(PERMISSIONS.CUSTOMER_PA
 router.post('/products', requirePermission(PERMISSIONS.SCANNER_PRODUCT_CREATE), scannerCreateProductController);
 router.put('/products/:id', requirePermission(PERMISSIONS.SCANNER_PRODUCT_UPDATE), scannerUpdateProductController);
 router.post('/live-state', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerUpdateLiveStateController);
+router.get('/shifts/current', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerGetShiftStateController);
+router.get('/shifts/today', requirePermission(PERMISSIONS.SCANNER_DASHBOARD_READ), scannerGetShiftStateController);
+router.post('/shifts/open', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerOpenShiftController);
+router.post('/shifts/:id/close', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerCloseShiftController);
 router.post('/sales', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerCreateSaleController);
 router.post('/diagnostic-events', requirePermission(PERMISSIONS.SCANNER_SALE_CREATE), scannerCreateDiagnosticEventController);
 router.post('/stock-requests', requirePermission(PERMISSIONS.STOCK_REQUEST_CREATE), scannerCreateStockRequestController);

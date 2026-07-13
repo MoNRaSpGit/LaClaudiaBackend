@@ -8,11 +8,13 @@ import {
   deactivateCustomerById,
   createScannerDiagnosticEvent,
   createSaleTicket,
+  closeScannerShift,
   createStockRequest,
   findCustomerById,
   findStockRequestById,
   findProductById,
   findProductByBarcode,
+  findOpenScannerShiftByDate,
   getDashboardInitialCashByDate,
   getBestSalesDayTotal,
   listDashboardInitialCashBetween,
@@ -25,6 +27,7 @@ import {
   listDailySalesTotalsBetween,
   listMonthlyWeekOverridesBetween,
   listScannerDiagnosticEvents,
+  listScannerShiftsByDate,
   listStockRequests,
   listPaymentMovementsBetween,
   listProducts,
@@ -42,7 +45,8 @@ import {
   upsertDashboardInitialCashByDate,
   upsertDashboardNextDayPreloadByDate,
   updateStockRequest,
-  updateProductById
+  updateProductById,
+  openScannerShift
 } from './scanner.repository.js';
 import {
   normalizeBarcode,
@@ -63,6 +67,9 @@ import {
   normalizeProductCreatePayload,
   normalizeProductUpdatePayload,
   normalizeSalePayload,
+  getShiftTypeLabel,
+  normalizeShiftType,
+  SHIFT_TYPES,
   normalizeStockRequestPayload,
   normalizeStockRequestUpdatePayload
 } from './scanner.model.js';
@@ -158,6 +165,87 @@ function formatShortDateLabel(dateLabel) {
   }
 
   return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`;
+}
+
+function createDefaultShiftSummary(dateLabel) {
+  return SHIFT_TYPES.map((shiftType) => ({
+    id: null,
+    businessDate: dateLabel,
+    shiftType,
+    shiftLabel: getShiftTypeLabel(shiftType),
+    status: 'closed',
+    isOpen: false,
+    salesTotal: 0,
+    salesCount: 0,
+    openedAt: null,
+    closedAt: null,
+    openedBy: null,
+    closedBy: null
+  }));
+}
+
+function toShiftSummaryItem(row, dateLabel) {
+  if (!row) {
+    return null;
+  }
+
+  const status = String(row.status || '').trim().toLowerCase() === 'open' ? 'open' : 'closed';
+  return {
+    id: Number(row.id || 0),
+    businessDate: String(row.business_date || dateLabel || '').slice(0, 10),
+    shiftType: String(row.shift_type || '').trim(),
+    shiftLabel: getShiftTypeLabel(row.shift_type),
+    status,
+    isOpen: status === 'open',
+    salesTotal: roundMoney(row.sales_total),
+    salesCount: Number(row.sales_count || 0),
+    openedAt: toCanonicalIsoUtc(row.opened_at),
+    closedAt: toCanonicalIsoUtc(row.closed_at),
+    openedBy: row.opened_by_user_id ? {
+      id: Number(row.opened_by_user_id),
+      username: String(row.opened_by_username || '').trim() || null,
+      displayName: String(row.opened_by_display_name || '').trim() || null
+    } : null,
+    closedBy: row.closed_by_user_id ? {
+      id: Number(row.closed_by_user_id),
+      username: String(row.closed_by_username || '').trim() || null,
+      displayName: String(row.closed_by_display_name || '').trim() || null
+    } : null
+  };
+}
+
+function buildShiftSummary(dateLabel, rows = []) {
+  const defaultShifts = createDefaultShiftSummary(dateLabel);
+  const byType = new Map(defaultShifts.map((shift) => [shift.shiftType, shift]));
+
+  rows.forEach((row) => {
+    const mapped = toShiftSummaryItem(row, dateLabel);
+    if (!mapped) {
+      return;
+    }
+    byType.set(mapped.shiftType, mapped);
+  });
+
+  const shifts = SHIFT_TYPES.map((shiftType) => byType.get(shiftType) || {
+    id: null,
+    businessDate: dateLabel,
+    shiftType,
+    shiftLabel: getShiftTypeLabel(shiftType),
+    status: 'closed',
+    isOpen: false,
+    salesTotal: 0,
+    salesCount: 0,
+    openedAt: null,
+    closedAt: null,
+    openedBy: null,
+    closedBy: null
+  });
+
+  return {
+    date: dateLabel,
+    shifts,
+    activeShift: shifts.find((shift) => shift.isOpen) || null
+  };
 }
 
 function buildMonthlyWeeksFromDays(monthKey, daysMap, profitRate, weekOverridesMap = new Map()) {
@@ -622,6 +710,17 @@ export async function updateScannerProduct(rawProductId, rawPayload) {
 
 export async function registerScannerSale(rawPayload) {
   const normalized = normalizeSalePayload(rawPayload);
+  const businessDate = getCurrentStoreDateLabel();
+  const activeShift = await findOpenScannerShiftByDate(businessDate);
+
+  if (!activeShift) {
+    const error = new Error('Abrir turno antes de vender');
+    error.statusCode = 409;
+    error.code = 'SHIFT_CLOSED';
+    throw error;
+  }
+
+  normalized.shift_id = activeShift.id;
 
   if (normalized.customer_id) {
     const customer = await findCustomerById(normalized.customer_id);
@@ -956,7 +1055,8 @@ export async function getScannerDashboard(rawQuery) {
     saleRows,
     paymentRows,
     customerAccountPaymentRows,
-    rankingRows
+    rankingRows,
+    shiftRows
   ] = await Promise.all([
     sumConfirmedSalesBetween(params.dayStart, params.dayEnd),
     sumConfirmedSalesByPaymentMethodBetween(params.dayStart, params.dayEnd),
@@ -969,7 +1069,8 @@ export async function getScannerDashboard(rawQuery) {
     listSalesMovementsBetween(params.dayStart, params.dayEnd, params.movementLimit),
     listPaymentMovementsBetween(params.dayStart, params.dayEnd, params.movementLimit),
     listCustomerAccountPaymentMovementsBetween(params.dayStart, params.dayEnd, params.movementLimit),
-    listRankingBetween(params.dayStart, params.dayEnd, params.rankingLimit)
+    listRankingBetween(params.dayStart, params.dayEnd, params.rankingLimit),
+    listScannerShiftsByDate(params.dateLabel)
   ]);
 
   const saleIds = saleRows.map((item) => Number(item.id));
@@ -1023,7 +1124,8 @@ export async function getScannerDashboard(rawQuery) {
     salesByPaymentMethod,
     comparison,
     movements,
-    ranking
+    ranking,
+    ...buildShiftSummary(params.dateLabel, shiftRows)
   };
 }
 
@@ -1172,6 +1274,43 @@ export async function updateScannerMonthlyWeekOverride(rawPayload) {
     note: String(updated?.note || normalized.note || '').trim(),
     updatedAt: updated?.updated_at ? toCanonicalIsoUtc(updated.updated_at) : new Date().toISOString()
   };
+}
+
+export async function getScannerShiftState(rawQuery = {}) {
+  const dateLabel = String(rawQuery?.date || '').trim() || getCurrentStoreDateLabel();
+  const rows = await listScannerShiftsByDate(dateLabel);
+  return buildShiftSummary(dateLabel, rows);
+}
+
+export async function openScannerShiftForUser(rawPayload, authUser = {}) {
+  const normalizedShiftType = normalizeShiftType(rawPayload?.shiftType);
+  if (!normalizedShiftType) {
+    const error = new Error('shiftType invalido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const businessDate = String(rawPayload?.date || '').trim() || getCurrentStoreDateLabel();
+  const openedByUserId = Number(authUser?.id || 0) || null;
+  const shift = await openScannerShift({
+    business_date: businessDate,
+    shift_type: normalizedShiftType,
+    opened_by_user_id: openedByUserId
+  });
+
+  return shift;
+}
+
+export async function closeScannerShiftForUser(rawShiftId, authUser = {}) {
+  const shiftId = Number(rawShiftId);
+  if (!Number.isInteger(shiftId) || shiftId <= 0) {
+    const error = new Error('shiftId invalido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const closedByUserId = Number(authUser?.id || 0) || null;
+  return closeScannerShift(shiftId, closedByUserId);
 }
 
 export async function createUserStockRequest(rawPayload, authUser = {}) {

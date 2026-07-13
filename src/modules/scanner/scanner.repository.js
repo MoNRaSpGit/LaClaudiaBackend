@@ -12,6 +12,59 @@ function getDbPoolOrThrow() {
   return pool;
 }
 
+function mapShiftRow(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: Number(row.id || 0),
+    business_date: String(row.business_date || '').slice(0, 10),
+    shift_type: String(row.shift_type || '').trim(),
+    status: String(row.status || '').trim(),
+    opened_by_user_id: row.opened_by_user_id != null ? Number(row.opened_by_user_id) : null,
+    closed_by_user_id: row.closed_by_user_id != null ? Number(row.closed_by_user_id) : null,
+    opened_at: row.opened_at || null,
+    closed_at: row.closed_at || null,
+    sales_total: Number(row.sales_total || 0),
+    sales_count: Number(row.sales_count || 0),
+    created_at: row.created_at || null,
+    updated_at: row.updated_at || null,
+    opened_by_username: String(row.opened_by_username || '').trim() || null,
+    opened_by_display_name: String(row.opened_by_display_name || '').trim() || null,
+    closed_by_username: String(row.closed_by_username || '').trim() || null,
+    closed_by_display_name: String(row.closed_by_display_name || '').trim() || null
+  };
+}
+
+function buildShiftSelectSql(whereSql = '', tailSql = '') {
+  return `
+    SELECT
+      s.id,
+      s.business_date,
+      s.shift_type,
+      s.status,
+      s.opened_by_user_id,
+      s.closed_by_user_id,
+      s.opened_at,
+      s.closed_at,
+      s.sales_total,
+      s.sales_count,
+      s.created_at,
+      s.updated_at,
+      ou.username AS opened_by_username,
+      ou.display_name AS opened_by_display_name,
+      cu.username AS closed_by_username,
+      cu.display_name AS closed_by_display_name
+    FROM scanner_shifts s
+    LEFT JOIN auth_users ou ON ou.id = s.opened_by_user_id
+    LEFT JOIN auth_users cu ON cu.id = s.closed_by_user_id
+    ${whereSql}
+    ORDER BY s.business_date DESC, FIELD(s.shift_type, 'manana', 'tarde', 'noche') ASC, s.id ASC
+    ${tailSql}
+  `;
+}
+
 export async function findProductByBarcode(barcode) {
   const pool = getDbPoolOrThrow();
   const tableName = escapeId(env.productsTable);
@@ -214,23 +267,50 @@ export async function createSaleTicket(salePayload) {
   try {
     await connection.beginTransaction();
 
+    let shiftRow = null;
+    if (salePayload.shift_id != null) {
+      const [shiftRows] = await connection.query(
+        `
+          SELECT
+            id,
+            status,
+            sales_total,
+            sales_count
+          FROM scanner_shifts
+          WHERE id = ?
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [salePayload.shift_id]
+      );
+      shiftRow = shiftRows[0] || null;
+
+      if (!shiftRow || String(shiftRow.status || '').trim() !== 'open') {
+        const error = new Error('No hay un turno abierto');
+        error.statusCode = 409;
+        throw error;
+      }
+    }
+
     const [ticketResult] = await connection.query(
       `
       INSERT INTO sales_tickets (
         external_id,
         user_id,
         customer_id,
+        shift_id,
         sale_payment_method,
-          total_amount,
+        total_amount,
         items_count,
         status,
         notes
-        ) VALUES (?, ?, ?, ?, ?, ?, 'confirmed', ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed', ?)
       `,
       [
         salePayload.external_id,
         salePayload.user_id,
         salePayload.customer_id,
+        salePayload.shift_id || null,
         salePayload.sale_payment_method,
         salePayload.total_amount,
         salePayload.items_count,
@@ -249,17 +329,203 @@ export async function createSaleTicket(salePayload) {
       await connection.query(insert.sql, insert.values);
     }
 
+    if (shiftRow) {
+      await connection.query(
+        `
+          UPDATE scanner_shifts
+          SET
+            sales_total = sales_total + ?,
+            sales_count = sales_count + ?,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+          LIMIT 1
+        `,
+        [
+          salePayload.total_amount,
+          salePayload.items_count,
+          salePayload.shift_id
+        ]
+      );
+    }
+
     await connection.commit();
 
     return {
       id: saleId,
       external_id: salePayload.external_id,
       customer_id: salePayload.customer_id,
+      shift_id: salePayload.shift_id || null,
       sale_payment_method: salePayload.sale_payment_method,
       total_amount: salePayload.total_amount,
       items_count: salePayload.items_count,
       created_at: new Date().toISOString()
     };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function findScannerShiftById(shiftId) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `${buildShiftSelectSql('WHERE s.id = ?', 'LIMIT 1')}`,
+    [shiftId]
+  );
+
+  return mapShiftRow(rows[0] || null);
+}
+
+export async function findOpenScannerShiftByDate(dateLabel) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `${buildShiftSelectSql(`
+      WHERE s.business_date = ?
+        AND s.status = 'open'
+    `, 'LIMIT 1')}`,
+    [dateLabel]
+  );
+
+  return mapShiftRow(rows[0] || null);
+}
+
+export async function listScannerShiftsByDate(dateLabel) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `${buildShiftSelectSql(`
+      WHERE s.business_date = ?
+    `)}`,
+    [dateLabel]
+  );
+
+  return rows.map(mapShiftRow);
+}
+
+export async function openScannerShift(payload) {
+  const pool = getDbPoolOrThrow();
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const [existingRows] = await connection.query(
+      `
+        SELECT
+          id,
+          status
+        FROM scanner_shifts
+        WHERE business_date = ?
+          AND shift_type = ?
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [payload.business_date, payload.shift_type]
+    );
+
+    const existing = existingRows[0] || null;
+    if (existing) {
+      if (String(existing.status || '').trim() === 'open') {
+        const error = new Error('Ese turno ya esta abierto');
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const error = new Error('Ese turno ya fue cerrado y no se puede reabrir');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    const [result] = await connection.query(
+      `
+        INSERT INTO scanner_shifts (
+          business_date,
+          shift_type,
+          status,
+          opened_by_user_id,
+          opened_at,
+          sales_total,
+          sales_count
+        ) VALUES (?, ?, 'open', ?, CURRENT_TIMESTAMP, 0, 0)
+      `,
+      [
+        payload.business_date,
+        payload.shift_type,
+        payload.opened_by_user_id
+      ]
+    );
+
+    const shiftId = Number(result.insertId);
+    const [rows] = await connection.query(
+      `${buildShiftSelectSql('WHERE s.id = ?', 'LIMIT 1')}`,
+      [shiftId]
+    );
+
+    await connection.commit();
+    return mapShiftRow(rows[0] || null);
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function closeScannerShift(shiftId, closedByUserId = null) {
+  const pool = getDbPoolOrThrow();
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const [rows] = await connection.query(
+      `
+        SELECT
+          id,
+          status
+        FROM scanner_shifts
+        WHERE id = ?
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [shiftId]
+    );
+
+    const existing = rows[0] || null;
+    if (!existing) {
+      const error = new Error('Turno no encontrado');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    if (String(existing.status || '').trim() !== 'open') {
+      const error = new Error('El turno ya esta cerrado');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    await connection.query(
+      `
+        UPDATE scanner_shifts
+        SET
+          status = 'closed',
+          closed_by_user_id = ?,
+          closed_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [closedByUserId, shiftId]
+    );
+
+    const [updatedRows] = await connection.query(
+      `${buildShiftSelectSql('WHERE s.id = ?', 'LIMIT 1')}`,
+      [shiftId]
+    );
+
+    await connection.commit();
+    return mapShiftRow(updatedRows[0] || null);
   } catch (error) {
     await connection.rollback();
     throw error;

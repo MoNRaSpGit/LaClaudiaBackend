@@ -9,6 +9,7 @@ import {
   getScannerDashboard,
   getScannerDashboardInitialCash,
   getScannerDashboardInitialCashPreload,
+  getScannerShiftState,
   getScannerMonthlySummary,
   getScannerTopSellingRanking,
   getScannerProducts,
@@ -18,6 +19,8 @@ import {
   registerScannerDiagnosticEvent,
   registerScannerPayment,
   registerScannerSale,
+  openScannerShiftForUser,
+  closeScannerShiftForUser,
   resolveUserStockRequest,
   updateUserStockRequest,
   updateScannerMonthlyWeekOverride,
@@ -92,6 +95,44 @@ export async function scannerCreateSaleController(req, res, next) {
     res.status(201).json({
       ok: true,
       sale
+    });
+    notifyDashboardChanged().catch(() => {});
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerGetShiftStateController(req, res, next) {
+  try {
+    const shiftState = await getScannerShiftState(req.query || {});
+    res.json({
+      ok: true,
+      shiftState
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerOpenShiftController(req, res, next) {
+  try {
+    const shift = await openScannerShiftForUser(req.body || {}, req.auth?.user || {});
+    res.status(201).json({
+      ok: true,
+      shift
+    });
+    notifyDashboardChanged().catch(() => {});
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerCloseShiftController(req, res, next) {
+  try {
+    const shift = await closeScannerShiftForUser(req.params.id, req.auth?.user || {});
+    res.json({
+      ok: true,
+      shift
     });
     notifyDashboardChanged().catch(() => {});
   } catch (error) {

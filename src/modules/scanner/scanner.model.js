@@ -4,6 +4,13 @@ export function normalizeBarcode(rawBarcode) {
 
 const STORE_TIME_ZONE = 'America/Montevideo';
 export const INITIAL_CASH_PRELOAD_OPEN_HOUR = 22;
+export const SHIFT_TYPES = ['manana', 'tarde', 'noche'];
+
+const SHIFT_TYPE_LABELS = {
+  manana: 'Mañana',
+  tarde: 'Tarde',
+  noche: 'Noche'
+};
 
 export function normalizeLimit(rawLimit) {
   const parsed = Number(rawLimit);
@@ -342,6 +349,22 @@ export function isInitialCashPreloadWindowOpen(date = new Date()) {
 
 export function getStoreDateParts(date = new Date()) {
   return getDatePartsInTimeZone(date, STORE_TIME_ZONE);
+}
+
+export function normalizeShiftType(rawValue) {
+  const normalized = String(rawValue || '').trim().toLowerCase();
+  if (SHIFT_TYPES.includes(normalized)) {
+    return normalized;
+  }
+  return null;
+}
+
+export function getShiftTypeLabel(rawValue) {
+  const normalized = normalizeShiftType(rawValue);
+  if (!normalized) {
+    return 'Turno';
+  }
+  return SHIFT_TYPE_LABELS[normalized] || 'Turno';
 }
 
 export function normalizeCustomerCreatePayload(rawPayload) {

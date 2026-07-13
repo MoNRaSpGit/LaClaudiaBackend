@@ -144,6 +144,19 @@ async function ensureSalesTicketCustomerColumn(pool) {
   );
 }
 
+async function ensureSalesTicketShiftColumn(pool) {
+  await ensureColumn(
+    pool,
+    'sales_tickets',
+    'shift_id',
+    `
+      ALTER TABLE sales_tickets
+      ADD COLUMN shift_id BIGINT UNSIGNED NULL
+      AFTER customer_id
+    `
+  );
+}
+
 async function ensureTables(pool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS auth_users (
@@ -183,6 +196,7 @@ async function ensureTables(pool) {
       external_id VARCHAR(64) NULL,
       user_id BIGINT UNSIGNED NULL,
       customer_id BIGINT UNSIGNED NULL,
+      shift_id BIGINT UNSIGNED NULL,
       sale_payment_method ENUM('efectivo', 'tarjeta', 'cuenta') NOT NULL DEFAULT 'efectivo',
       total_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
       items_count INT UNSIGNED NOT NULL DEFAULT 0,
@@ -194,6 +208,26 @@ async function ensureTables(pool) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
   console.log('[core-schema] tabla sales_tickets lista');
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS scanner_shifts (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      business_date DATE NOT NULL,
+      shift_type ENUM('manana', 'tarde', 'noche') NOT NULL,
+      status ENUM('open', 'closed') NOT NULL DEFAULT 'open',
+      opened_by_user_id BIGINT UNSIGNED NULL,
+      closed_by_user_id BIGINT UNSIGNED NULL,
+      opened_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      closed_at DATETIME NULL,
+      sales_total DECIMAL(12,2) NOT NULL DEFAULT 0,
+      sales_count INT UNSIGNED NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY ux_scanner_shifts_business_date_type (business_date, shift_type)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+  console.log('[core-schema] tabla scanner_shifts lista');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS sales_ticket_items (
@@ -346,6 +380,7 @@ async function ensureTables(pool) {
 async function ensureConstraintsAndIndexes(pool) {
   await ensureSalesTicketCustomerColumn(pool);
   await ensureSalesTicketPaymentMethodColumn(pool);
+  await ensureSalesTicketShiftColumn(pool);
 
   await ensureForeignKey(
     pool,
@@ -384,6 +419,20 @@ async function ensureConstraintsAndIndexes(pool) {
       ADD CONSTRAINT fk_sales_tickets_customer_id
       FOREIGN KEY (customer_id)
       REFERENCES customers(id)
+      ON UPDATE CASCADE
+      ON DELETE SET NULL
+    `
+  );
+
+  await ensureForeignKey(
+    pool,
+    'sales_tickets',
+    'fk_sales_tickets_shift_id',
+    `
+      ALTER TABLE sales_tickets
+      ADD CONSTRAINT fk_sales_tickets_shift_id
+      FOREIGN KEY (shift_id)
+      REFERENCES scanner_shifts(id)
       ON UPDATE CASCADE
       ON DELETE SET NULL
     `
@@ -525,9 +574,12 @@ async function ensureConstraintsAndIndexes(pool) {
   await ensureIndex(pool, 'sales_tickets', 'idx_sales_tickets_created_at', 'ALTER TABLE sales_tickets ADD INDEX idx_sales_tickets_created_at (created_at)');
   await ensureIndex(pool, 'sales_tickets', 'idx_sales_tickets_user_created', 'ALTER TABLE sales_tickets ADD INDEX idx_sales_tickets_user_created (user_id, created_at)');
   await ensureIndex(pool, 'sales_tickets', 'idx_sales_tickets_customer_created', 'ALTER TABLE sales_tickets ADD INDEX idx_sales_tickets_customer_created (customer_id, created_at)');
+  await ensureIndex(pool, 'sales_tickets', 'idx_sales_tickets_shift_created', 'ALTER TABLE sales_tickets ADD INDEX idx_sales_tickets_shift_created (shift_id, created_at)');
   await ensureIndex(pool, 'sales_tickets', 'idx_sales_tickets_status_created', 'ALTER TABLE sales_tickets ADD INDEX idx_sales_tickets_status_created (status, created_at)');
   await ensureIndex(pool, 'sales_tickets', 'idx_sales_tickets_payment_method_created', 'ALTER TABLE sales_tickets ADD INDEX idx_sales_tickets_payment_method_created (sale_payment_method, created_at)');
   await ensureIndex(pool, 'customers', 'idx_customers_name_active', 'ALTER TABLE customers ADD INDEX idx_customers_name_active (name, is_active)');
+  await ensureIndex(pool, 'scanner_shifts', 'idx_scanner_shifts_business_date_status', 'ALTER TABLE scanner_shifts ADD INDEX idx_scanner_shifts_business_date_status (business_date, status, shift_type)');
+  await ensureIndex(pool, 'scanner_shifts', 'idx_scanner_shifts_opened_at', 'ALTER TABLE scanner_shifts ADD INDEX idx_scanner_shifts_opened_at (opened_at)');
 
   await ensureIndex(pool, 'sales_ticket_items', 'idx_sales_ticket_items_sale_id', 'ALTER TABLE sales_ticket_items ADD INDEX idx_sales_ticket_items_sale_id (sale_id)');
   await ensureIndex(pool, 'sales_ticket_items', 'idx_sales_ticket_items_product_id', 'ALTER TABLE sales_ticket_items ADD INDEX idx_sales_ticket_items_product_id (product_id)');
