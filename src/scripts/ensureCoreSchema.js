@@ -631,7 +631,7 @@ async function ensureBootstrapAdmin(pool) {
   console.log('[core-schema] bootstrap admin asegurado');
 }
 
-export async function ensureCoreSchema() {
+export async function ensureCoreSchema({ closePool = true } = {}) {
   const pool = getPool();
   if (!pool) {
     console.log('[core-schema] DB no configurada, se omite');
@@ -641,12 +641,14 @@ export async function ensureCoreSchema() {
   await ensureTables(pool);
   await ensureConstraintsAndIndexes(pool);
   await ensureBootstrapAdmin(pool);
-  await pool.end();
+  if (closePool) {
+    await pool.end();
+  }
   console.log('[core-schema] listo');
 }
 
 async function main() {
-  await ensureCoreSchema();
+  await ensureCoreSchema({ closePool: true });
 }
 
 const isDirectExecution = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];

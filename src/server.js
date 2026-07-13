@@ -5,7 +5,7 @@ import { ensureCoreSchema } from './scripts/ensureCoreSchema.js';
 const app = createApp();
 
 async function start() {
-  await ensureCoreSchema();
+  await ensureCoreSchema({ closePool: false });
 
   app.listen(env.port, () => {
     console.log(`[laclau-backend] running on port ${env.port}`);
