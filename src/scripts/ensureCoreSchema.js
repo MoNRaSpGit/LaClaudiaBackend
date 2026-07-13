@@ -1,5 +1,6 @@
 import { getPool } from '../config/db.js';
 import { env } from '../config/env.js';
+import { fileURLToPath } from 'node:url';
 
 async function indexExists(pool, tableName, indexName) {
   const [rows] = await pool.query(
@@ -630,10 +631,11 @@ async function ensureBootstrapAdmin(pool) {
   console.log('[core-schema] bootstrap admin asegurado');
 }
 
-async function main() {
+export async function ensureCoreSchema() {
   const pool = getPool();
   if (!pool) {
-    throw new Error('DB no configurada. Completa DB_HOST/DB_USER/DB_NAME.');
+    console.log('[core-schema] DB no configurada, se omite');
+    return;
   }
 
   await ensureTables(pool);
@@ -643,7 +645,15 @@ async function main() {
   console.log('[core-schema] listo');
 }
 
-main().catch((error) => {
-  console.error(`[core-schema] error: ${error?.message || error}`);
-  process.exit(1);
-});
+async function main() {
+  await ensureCoreSchema();
+}
+
+const isDirectExecution = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+
+if (isDirectExecution) {
+  main().catch((error) => {
+    console.error(`[core-schema] error: ${error?.message || error}`);
+    process.exit(1);
+  });
+}
