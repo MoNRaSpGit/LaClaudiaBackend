@@ -28,6 +28,7 @@ import {
   listDailySalesTotalsBetween,
   listMonthlyWeekOverridesBetween,
   listScannerDiagnosticEvents,
+  listCashPaymentsBetween,
   listScannerShiftPaymentTotalsByDate,
   listScannerShiftsByDate,
   resetScannerShiftsByDate,
@@ -184,6 +185,9 @@ function createDefaultShiftSummary(dateLabel) {
     salesTotal: 0,
     salesCount: 0,
     cashSalesTotal: 0,
+    cashPaymentsTotal: 0,
+    cashExpectedTotal: 0,
+    cashCurrentTotal: 0,
     cashTotal: 0,
     paymentSummary: {
       efectivo: 0,
@@ -256,6 +260,9 @@ function toShiftSummaryItem(row, dateLabel) {
     salesTotal: roundMoney(row.sales_total),
     salesCount: Number(row.sales_count || 0),
     cashSalesTotal: 0,
+    cashPaymentsTotal: 0,
+    cashExpectedTotal: 0,
+    cashCurrentTotal: 0,
     cashTotal: 0,
     paymentSummary: createEmptyShiftPaymentSummary(),
     openedAt: toCanonicalIsoUtc(row.opened_at),
@@ -273,7 +280,7 @@ function toShiftSummaryItem(row, dateLabel) {
   };
 }
 
-function buildShiftSummary(dateLabel, rows = [], paymentRows = []) {
+function buildShiftSummary(dateLabel, rows = [], salesPaymentRows = [], cashPaymentRows = []) {
   const defaultShifts = createDefaultShiftSummary(dateLabel);
   const byType = new Map(defaultShifts.map((shift) => [shift.shiftType, shift]));
 
@@ -296,6 +303,11 @@ function buildShiftSummary(dateLabel, rows = [], paymentRows = []) {
     shiftOpeningCash: 0,
     salesTotal: 0,
     salesCount: 0,
+    cashSalesTotal: 0,
+    cashPaymentsTotal: 0,
+    cashExpectedTotal: 0,
+    cashCurrentTotal: 0,
+    cashTotal: 0,
     paymentSummary: createEmptyShiftPaymentSummary(),
     openedAt: null,
     closedAt: null,
@@ -303,10 +315,51 @@ function buildShiftSummary(dateLabel, rows = [], paymentRows = []) {
     closedBy: null
   });
 
-  applyShiftPaymentTotals(shifts, paymentRows);
+  applyShiftPaymentTotals(shifts, salesPaymentRows);
   shifts.forEach((shift) => {
     shift.cashSalesTotal = roundMoney(shift.paymentSummary?.efectivo || 0);
-    shift.cashTotal = roundMoney(Number(shift.openingCash || 0) + Number(shift.cashSalesTotal || 0));
+  });
+
+  const orderedShifts = shifts
+    .slice()
+    .sort((left, right) => {
+      const leftOpenedAt = Date.parse(left.openedAt || '');
+      const rightOpenedAt = Date.parse(right.openedAt || '');
+      return (Number.isFinite(leftOpenedAt) ? leftOpenedAt : 0) - (Number.isFinite(rightOpenedAt) ? rightOpenedAt : 0);
+    });
+
+  cashPaymentRows.forEach((row) => {
+    const paymentAt = Date.parse(row.created_at || '');
+    const amount = roundMoney(row.amount);
+    if (!Number.isFinite(paymentAt) || amount <= 0) {
+      return;
+    }
+
+    const targetShift = orderedShifts.find((shift) => {
+      const openedAt = Date.parse(shift.openedAt || '');
+      if (!Number.isFinite(openedAt) || paymentAt < openedAt) {
+        return false;
+      }
+
+      const closedAt = shift.closedAt ? Date.parse(shift.closedAt) : Date.now();
+      if (!Number.isFinite(closedAt)) {
+        return false;
+      }
+
+      return paymentAt < closedAt;
+    });
+
+    if (!targetShift) {
+      return;
+    }
+
+    targetShift.cashPaymentsTotal = roundMoney(Number(targetShift.cashPaymentsTotal || 0) + amount);
+  });
+
+  shifts.forEach((shift) => {
+    shift.cashExpectedTotal = roundMoney(Number(shift.openingCash || 0) + Number(shift.cashSalesTotal || 0));
+    shift.cashCurrentTotal = roundMoney(Number(shift.cashExpectedTotal || 0) - Number(shift.cashPaymentsTotal || 0));
+    shift.cashTotal = shift.cashCurrentTotal;
   });
 
   return {
@@ -1124,7 +1177,8 @@ export async function getScannerDashboard(rawQuery) {
     paymentRows,
     customerAccountPaymentRows,
     rankingRows,
-    shiftRows
+    shiftRows,
+    cashPaymentRows
   ] = await Promise.all([
     sumConfirmedSalesBetween(params.dayStart, params.dayEnd),
     sumConfirmedSalesByPaymentMethodBetween(params.dayStart, params.dayEnd),
@@ -1138,7 +1192,8 @@ export async function getScannerDashboard(rawQuery) {
     listPaymentMovementsBetween(params.dayStart, params.dayEnd, params.movementLimit),
     listCustomerAccountPaymentMovementsBetween(params.dayStart, params.dayEnd, params.movementLimit),
     listRankingBetween(params.dayStart, params.dayEnd, params.rankingLimit),
-    listScannerShiftsByDate(params.dateLabel)
+    listScannerShiftsByDate(params.dateLabel),
+    listCashPaymentsBetween(params.dayStart, params.dayEnd)
   ]);
 
   const saleIds = saleRows.map((item) => Number(item.id));
@@ -1194,7 +1249,7 @@ export async function getScannerDashboard(rawQuery) {
     comparison,
     movements,
     ranking,
-    ...buildShiftSummary(params.dateLabel, shiftRows, shiftPaymentTotalsRows)
+    ...buildShiftSummary(params.dateLabel, shiftRows, shiftPaymentTotalsRows, cashPaymentRows)
   };
 }
 
@@ -1346,10 +1401,13 @@ export async function updateScannerMonthlyWeekOverride(rawPayload) {
 }
 
 export async function getScannerShiftState(rawQuery = {}) {
-  const dateLabel = String(rawQuery?.date || '').trim() || getCurrentStoreDateLabel();
-  const rows = await listScannerShiftsByDate(dateLabel);
-  const paymentRows = await listScannerShiftPaymentTotalsByDate(dateLabel);
-  return buildShiftSummary(dateLabel, rows, paymentRows);
+  const params = normalizeDashboardParams(rawQuery);
+  const [rows, paymentRows, cashPaymentRows] = await Promise.all([
+    listScannerShiftsByDate(params.dateLabel),
+    listScannerShiftPaymentTotalsByDate(params.dateLabel),
+    listCashPaymentsBetween(params.dayStart, params.dayEnd)
+  ]);
+  return buildShiftSummary(params.dateLabel, rows, paymentRows, cashPaymentRows);
 }
 
 export async function openScannerShiftForUser(rawPayload, authUser = {}) {

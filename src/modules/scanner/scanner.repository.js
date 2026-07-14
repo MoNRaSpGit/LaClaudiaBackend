@@ -900,6 +900,25 @@ export async function listPaymentMovementsBetween(startDate, endDate, limit) {
   return rows;
 }
 
+export async function listCashPaymentsBetween(startDate, endDate) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        id,
+        amount,
+        created_at
+      FROM cash_payments
+      WHERE status = 'confirmed'
+        AND created_at >= ?
+        AND created_at < ?
+      ORDER BY created_at ASC, id ASC
+    `,
+    [startDate, endDate]
+  );
+  return rows;
+}
+
 export async function listCustomerAccountPaymentMovementsBetween(startDate, endDate, limit) {
   const pool = getDbPoolOrThrow();
   const [rows] = await pool.query(
