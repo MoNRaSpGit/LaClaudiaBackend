@@ -1374,18 +1374,9 @@ export async function closeScannerShiftForUser(rawShiftId, authUser = {}) {
   }
 
   const closedByUserId = Number(authUser?.id || 0) || null;
-  const userRole = String(authUser?.role || '').trim().toLowerCase();
-  const shift = await findScannerShiftById(shiftId);
-
-  if (!shift) {
-    const error = new Error('Turno no encontrado');
-    error.statusCode = 404;
-    throw error;
-  }
-
-  if (userRole !== 'admin' && Number(shift.openedBy?.id || 0) !== closedByUserId) {
-    const error = new Error('Solo el operario que abrio el turno puede cerrarlo');
-    error.statusCode = 403;
+  if (!closedByUserId) {
+    const error = new Error('usuario autenticado invalido');
+    error.statusCode = 401;
     throw error;
   }
 
