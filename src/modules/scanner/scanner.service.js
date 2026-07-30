@@ -647,19 +647,45 @@ function buildPaymentMovements(paymentRows) {
   }));
 }
 
+function parseCoveredItemsSnapshot(rawSnapshot) {
+  if (!rawSnapshot) {
+    return [];
+  }
+
+  try {
+    const parsed = typeof rawSnapshot === 'string' ? JSON.parse(rawSnapshot) : rawSnapshot;
+    const items = Array.isArray(parsed?.items) ? parsed.items : [];
+    return items
+      .map((item) => ({
+        name: String(item?.name || '').trim(),
+        quantity: Number(item?.quantity || 0),
+        lineTotal: roundMoney(item?.lineTotal)
+      }))
+      .filter((item) => item.name);
+  } catch (_error) {
+    return [];
+  }
+}
+
 function buildCustomerAccountPaymentMovements(paymentRows) {
-  return paymentRows.map((payment) => ({
-    id: `customer-account-payment-${payment.id}`,
-    type: 'Cobro cuenta',
-    amount: roundMoney(payment.amount),
-    createdAt: toCanonicalIsoUtc(payment.created_at),
-    detail: {
-      kind: 'payment',
-      description: payment.notes
-        ? `${String(payment.customer_name || '').trim() || 'Cliente'}: ${payment.notes}`
-        : `Cobro de cuenta a ${String(payment.customer_name || '').trim() || 'cliente'}.`
-    }
-  }));
+  return paymentRows.map((payment) => {
+    const customerName = String(payment.customer_name || '').trim() || 'Cliente';
+    const items = parseCoveredItemsSnapshot(payment.covered_items_snapshot);
+
+    return {
+      id: `customer-account-payment-${payment.id}`,
+      type: 'Cobro cuenta',
+      amount: roundMoney(payment.amount),
+      createdAt: toCanonicalIsoUtc(payment.created_at),
+      detail: {
+        kind: 'customer_payment',
+        description: payment.notes
+          ? `${customerName}: ${payment.notes}`
+          : `Cobro de cuenta a ${customerName}.`,
+        items
+      }
+    };
+  });
 }
 
 function dedupeMovementsById(movements) {

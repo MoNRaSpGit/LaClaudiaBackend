@@ -28,6 +28,77 @@ export function escapeId(identifier) {
   return `\`${String(identifier).replace(/`/g, '``')}\``;
 }
 
+export function roundMoney2(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+/**
+ * Dado el historial de ventas a cuenta de un cliente (mas viejas primero) y
+ * lo que ya se pago historicamente, calcula la deuda real y valida un pago
+ * nuevo contra esa deuda. Pura (sin DB) para poder testearla sin mysql y para
+ * que backend y el calculo de "que cubre este pago" usen la misma fuente de
+ * verdad en vez de que el frontend adivine con datos que pueden estar viejos.
+ */
+export function reconcileCustomerAccountPayment({ salesAsc = [], totalPaymentsBefore = 0, paymentAmount = 0 }) {
+  const totalSales = salesAsc.reduce((sum, sale) => sum + Number(sale.total_amount ?? sale.totalAmount ?? 0), 0);
+  const debtTotal = roundMoney2(Math.max(totalSales - Number(totalPaymentsBefore || 0), 0));
+  const normalizedPaymentAmount = roundMoney2(paymentAmount);
+
+  if (normalizedPaymentAmount - debtTotal > 0.01) {
+    const error = new Error('El pago supera la deuda actual del cliente.');
+    error.statusCode = 409;
+    throw error;
+  }
+
+  // Las ventas mas viejas se consideran saldadas primero (FIFO) por los pagos
+  // ya registrados, para saber cuales siguen impagas.
+  let alreadyPaid = Number(totalPaymentsBefore || 0);
+  const outstandingSales = [];
+  salesAsc.forEach((sale) => {
+    const saleAmount = Number(sale.total_amount ?? sale.totalAmount ?? 0);
+    if (alreadyPaid >= saleAmount - 0.005) {
+      alreadyPaid = roundMoney2(alreadyPaid - saleAmount);
+      return;
+    }
+    outstandingSales.push(sale);
+    alreadyPaid = 0;
+  });
+
+  // De las ventas impagas, este pago nuevo cubre las mas viejas primero.
+  let remaining = normalizedPaymentAmount;
+  const coveredSales = [];
+  for (const sale of outstandingSales) {
+    if (remaining <= 0.005) {
+      break;
+    }
+    coveredSales.push(sale);
+    remaining = roundMoney2(remaining - Number(sale.total_amount ?? sale.totalAmount ?? 0));
+  }
+
+  return {
+    debtTotal,
+    paymentAmount: normalizedPaymentAmount,
+    isFullyClosing: roundMoney2(debtTotal - normalizedPaymentAmount) <= 0.01,
+    coveredSaleIds: coveredSales.map((sale) => Number(sale.id)),
+    debtRemaining: roundMoney2(Math.max(debtTotal - normalizedPaymentAmount, 0))
+  };
+}
+
+export function buildCoveredItemsSnapshot(coveredItemRows = []) {
+  const itemsByName = new Map();
+  coveredItemRows.forEach((item) => {
+    const name = String(item.product_name ?? item.name ?? '').trim();
+    if (!name) {
+      return;
+    }
+    const current = itemsByName.get(name) || { name, quantity: 0, lineTotal: 0 };
+    current.quantity += Number(item.quantity || 0);
+    current.lineTotal = roundMoney2(current.lineTotal + Number(item.line_total ?? item.lineTotal ?? 0));
+    itemsByName.set(name, current);
+  });
+  return Array.from(itemsByName.values());
+}
+
 function normalizeOptionalString(value) {
   const normalized = String(value || '').trim();
   return normalized || null;

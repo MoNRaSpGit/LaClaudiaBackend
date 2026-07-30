@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   INITIAL_CASH_PRELOAD_OPEN_HOUR,
+  buildCoveredItemsSnapshot,
   getNextStoreDateLabel,
   getStoreDateLabelForDate,
   isInitialCashPreloadWindowOpen,
@@ -10,8 +11,103 @@ import {
   normalizePaymentPayload,
   normalizeProductCreatePayload,
   normalizeProductUpdatePayload,
-  normalizeSalePayload
+  normalizeSalePayload,
+  reconcileCustomerAccountPayment
 } from './scanner.model.js';
+
+describe('reconcileCustomerAccountPayment', () => {
+  it('cubre todas las ventas impagas cuando el pago salda la deuda completa', () => {
+    const salesAsc = [
+      { id: 1, total_amount: 1000, created_at: '2026-04-28 10:00:00' },
+      { id: 2, total_amount: 1400, created_at: '2026-04-29 12:00:00' },
+      { id: 3, total_amount: 1000, created_at: '2026-04-29 18:00:00' }
+    ];
+
+    const result = reconcileCustomerAccountPayment({
+      salesAsc,
+      totalPaymentsBefore: 0,
+      paymentAmount: 3400
+    });
+
+    expect(result.debtTotal).toBe(3400);
+    expect(result.isFullyClosing).toBe(true);
+    expect(result.debtRemaining).toBe(0);
+    expect(result.coveredSaleIds).toEqual([1, 2, 3]);
+  });
+
+  it('usa la deuda real de la DB, no una deuda vieja del frontend: si aparecio una venta nueva, el pago que antes cerraba la cuenta ahora queda parcial', () => {
+    // Reproduce el bug reportado: el operador vio $2400 de deuda en pantalla y
+    // pago ese monto pensando que cerraba la cuenta, pero justo antes se habia
+    // cargado una venta nueva de $1000 que la pantalla todavia no reflejaba.
+    // La deuda real en la DB ya es $3400. El pago de $2400 no debe marcarse
+    // como "isFullyClosing" ni consumir la venta de hoy.
+    const salesAsc = [
+      { id: 1, total_amount: 1400, created_at: '2026-04-28 10:00:00' }, // "ayer"
+      { id: 2, total_amount: 1000, created_at: '2026-04-29 09:00:00' }, // "ayer"
+      { id: 3, total_amount: 1000, created_at: '2026-04-30 08:00:00' } // venta nueva de "hoy", no vista en pantalla
+    ];
+
+    const result = reconcileCustomerAccountPayment({
+      salesAsc,
+      totalPaymentsBefore: 0,
+      paymentAmount: 2400
+    });
+
+    expect(result.debtTotal).toBe(3400);
+    expect(result.isFullyClosing).toBe(false);
+    expect(result.debtRemaining).toBe(1000);
+    // Cubre las dos ventas mas viejas (FIFO), no la de hoy.
+    expect(result.coveredSaleIds).toEqual([1, 2]);
+  });
+
+  it('rechaza un pago que supera la deuda real (validacion server-side)', () => {
+    const salesAsc = [{ id: 1, total_amount: 1000, created_at: '2026-04-28 10:00:00' }];
+
+    expect(() => reconcileCustomerAccountPayment({
+      salesAsc,
+      totalPaymentsBefore: 0,
+      paymentAmount: 1500
+    })).toThrow(/supera la deuda/i);
+  });
+
+  it('descuenta pagos previos antes de decidir que ventas siguen impagas', () => {
+    const salesAsc = [
+      { id: 1, total_amount: 1000, created_at: '2026-04-28 10:00:00' },
+      { id: 2, total_amount: 1000, created_at: '2026-04-29 10:00:00' }
+    ];
+
+    const result = reconcileCustomerAccountPayment({
+      salesAsc,
+      totalPaymentsBefore: 1000,
+      paymentAmount: 1000
+    });
+
+    expect(result.debtTotal).toBe(1000);
+    expect(result.isFullyClosing).toBe(true);
+    expect(result.coveredSaleIds).toEqual([2]);
+  });
+});
+
+describe('buildCoveredItemsSnapshot', () => {
+  it('agrupa items por nombre de producto sumando cantidades y montos', () => {
+    const rows = [
+      { sale_id: 1, product_name: 'Leche', quantity: 2, line_total: 200 },
+      { sale_id: 2, product_name: 'Pan', quantity: 1, line_total: 80 },
+      { sale_id: 2, product_name: 'Leche', quantity: 1, line_total: 100 }
+    ];
+
+    const items = buildCoveredItemsSnapshot(rows);
+
+    expect(items).toEqual([
+      { name: 'Leche', quantity: 3, lineTotal: 300 },
+      { name: 'Pan', quantity: 1, lineTotal: 80 }
+    ]);
+  });
+
+  it('devuelve lista vacia sin filas', () => {
+    expect(buildCoveredItemsSnapshot([])).toEqual([]);
+  });
+});
 
 describe('normalizeDashboardParams', () => {
   it('builds store-day ranges in America/Montevideo for an explicit date', () => {

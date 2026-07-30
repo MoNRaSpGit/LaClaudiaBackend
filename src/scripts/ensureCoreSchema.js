@@ -171,6 +171,19 @@ async function ensureScannerShiftOpeningCashColumn(pool) {
   );
 }
 
+async function ensureCustomerAccountPaymentCoveredItemsColumn(pool) {
+  await ensureColumn(
+    pool,
+    'customer_account_payments',
+    'covered_items_snapshot',
+    `
+      ALTER TABLE customer_account_payments
+      ADD COLUMN covered_items_snapshot TEXT NULL
+      AFTER notes
+    `
+  );
+}
+
 async function ensureTables(pool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS auth_users (
@@ -397,6 +410,7 @@ async function ensureConstraintsAndIndexes(pool) {
   await ensureSalesTicketPaymentMethodColumn(pool);
   await ensureSalesTicketShiftColumn(pool);
   await ensureScannerShiftOpeningCashColumn(pool);
+  await ensureCustomerAccountPaymentCoveredItemsColumn(pool);
 
   await ensureForeignKey(
     pool,

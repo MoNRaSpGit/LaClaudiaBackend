@@ -1,6 +1,6 @@
 import { getPool } from '../../config/db.js';
 import { env } from '../../config/env.js';
-import { escapeId } from './scanner.model.js';
+import { buildCoveredItemsSnapshot, escapeId, reconcileCustomerAccountPayment } from './scanner.model.js';
 
 function getDbPoolOrThrow() {
   const pool = getPool();
@@ -286,6 +286,15 @@ export async function createSaleTicket(salePayload) {
 
   try {
     await connection.beginTransaction();
+
+    if (salePayload.customer_id != null) {
+      // Bloquea la fila del cliente para serializar contra un pago de cuenta
+      // concurrente y evitar que el ticket de cierre de cuenta se arme con datos viejos.
+      await connection.query(
+        `SELECT id FROM customers WHERE id = ? LIMIT 1 FOR UPDATE`,
+        [salePayload.customer_id]
+      );
+    }
 
     let shiftRow = null;
     if (salePayload.shift_id != null) {
@@ -666,38 +675,115 @@ export async function createCashPayment(paymentPayload) {
 
 export async function createCustomerAccountPayment(paymentPayload) {
   const pool = getDbPoolOrThrow();
-  const [result] = await pool.query(
-    `
-      INSERT INTO customer_account_payments (
-        external_id,
-        customer_id,
-        user_id,
-        payment_method,
-        amount,
-        notes,
-        status
-      ) VALUES (?, ?, ?, ?, ?, ?, 'confirmed')
-    `,
-    [
-      paymentPayload.external_id,
-      paymentPayload.customer_id,
-      paymentPayload.user_id,
-      paymentPayload.payment_method,
-      paymentPayload.amount,
-      paymentPayload.notes
-    ]
-  );
+  const connection = await pool.getConnection();
 
-  return {
-    id: Number(result.insertId),
-    external_id: paymentPayload.external_id,
-    customer_id: paymentPayload.customer_id,
-    user_id: paymentPayload.user_id,
-    payment_method: paymentPayload.payment_method,
-    amount: paymentPayload.amount,
-    notes: paymentPayload.notes,
-    created_at: new Date().toISOString()
-  };
+  try {
+    await connection.beginTransaction();
+
+    // Bloquea la fila del cliente: serializa contra una venta a cuenta o un
+    // pago concurrente para que la deuda leida abajo sea siempre la real,
+    // no una foto vieja cacheada en el frontend.
+    await connection.query(
+      `SELECT id FROM customers WHERE id = ? LIMIT 1 FOR UPDATE`,
+      [paymentPayload.customer_id]
+    );
+
+    const [salesRows] = await connection.query(
+      `
+        SELECT id, total_amount, created_at
+        FROM sales_tickets
+        WHERE customer_id = ?
+          AND status = 'confirmed'
+          AND sale_payment_method = 'cuenta'
+        ORDER BY created_at ASC, id ASC
+      `,
+      [paymentPayload.customer_id]
+    );
+
+    const [paymentsAggRows] = await connection.query(
+      `
+        SELECT COALESCE(SUM(amount), 0) AS total_payments
+        FROM customer_account_payments
+        WHERE customer_id = ?
+          AND status = 'confirmed'
+      `,
+      [paymentPayload.customer_id]
+    );
+
+    const totalPayments = Number(paymentsAggRows[0]?.total_payments || 0);
+    const reconciliation = reconcileCustomerAccountPayment({
+      salesAsc: salesRows,
+      totalPaymentsBefore: totalPayments,
+      paymentAmount: paymentPayload.amount
+    });
+    const paymentAmount = reconciliation.paymentAmount;
+
+    let coveredItemRows = [];
+    if (reconciliation.coveredSaleIds.length) {
+      const placeholders = reconciliation.coveredSaleIds.map(() => '?').join(', ');
+      const [rows] = await connection.query(
+        `
+          SELECT sale_id, product_name, quantity, line_total
+          FROM sales_ticket_items
+          WHERE sale_id IN (${placeholders})
+          ORDER BY id ASC
+        `,
+        reconciliation.coveredSaleIds
+      );
+      coveredItemRows = rows;
+    }
+
+    const coveredItemsSnapshot = {
+      generatedAtIso: new Date().toISOString(),
+      isFullyClosing: reconciliation.isFullyClosing,
+      coveredSalesCount: reconciliation.coveredSaleIds.length,
+      items: buildCoveredItemsSnapshot(coveredItemRows)
+    };
+
+    const [result] = await connection.query(
+      `
+        INSERT INTO customer_account_payments (
+          external_id,
+          customer_id,
+          user_id,
+          payment_method,
+          amount,
+          notes,
+          covered_items_snapshot,
+          status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed')
+      `,
+      [
+        paymentPayload.external_id,
+        paymentPayload.customer_id,
+        paymentPayload.user_id,
+        paymentPayload.payment_method,
+        paymentAmount,
+        paymentPayload.notes,
+        JSON.stringify(coveredItemsSnapshot)
+      ]
+    );
+
+    await connection.commit();
+
+    return {
+      id: Number(result.insertId),
+      external_id: paymentPayload.external_id,
+      customer_id: paymentPayload.customer_id,
+      user_id: paymentPayload.user_id,
+      payment_method: paymentPayload.payment_method,
+      amount: paymentAmount,
+      notes: paymentPayload.notes,
+      created_at: new Date().toISOString(),
+      covered_items_snapshot: coveredItemsSnapshot,
+      debt_remaining: reconciliation.debtRemaining
+    };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
 export async function sumConfirmedSalesBetween(startDate, endDate) {
@@ -929,6 +1015,7 @@ export async function listCustomerAccountPaymentMovementsBetween(startDate, endD
         cap.payment_method,
         cap.amount,
         cap.notes,
+        cap.covered_items_snapshot,
         cap.created_at,
         c.name AS customer_name
       FROM customer_account_payments cap
