@@ -20,8 +20,10 @@ import {
   getBestSalesDayTotal,
   listDashboardInitialCashBetween,
   getTotalOutstandingCustomerDebt,
+  listAllCustomerAccountSalesForReconciliation,
   listCustomerAccountSales,
   listCustomerAccountPaymentMovementsBetween,
+  listCustomerAccountPaymentsForCashMatchingBetween,
   listCustomerAccountPayments,
   listCustomersWithDebt,
   listDailyPaymentTotalsBetween,
@@ -53,6 +55,7 @@ import {
   openScannerShift
 } from './scanner.repository.js';
 import {
+  annotateAccountSalesSettlement,
   normalizeBarcode,
   normalizeCustomerAccountPaymentPayload,
   normalizeCustomerCreatePayload,
@@ -185,6 +188,7 @@ function createDefaultShiftSummary(dateLabel) {
     salesTotal: 0,
     salesCount: 0,
     cashSalesTotal: 0,
+    cashCustomerAccountPaymentsTotal: 0,
     cashPaymentsTotal: 0,
     cashExpectedTotal: 0,
     cashCurrentTotal: 0,
@@ -260,6 +264,7 @@ function toShiftSummaryItem(row, dateLabel) {
     salesTotal: roundMoney(row.sales_total),
     salesCount: Number(row.sales_count || 0),
     cashSalesTotal: 0,
+    cashCustomerAccountPaymentsTotal: 0,
     cashPaymentsTotal: 0,
     cashExpectedTotal: 0,
     cashCurrentTotal: 0,
@@ -280,7 +285,28 @@ function toShiftSummaryItem(row, dateLabel) {
   };
 }
 
-function buildShiftSummary(dateLabel, rows = [], salesPaymentRows = [], cashPaymentRows = []) {
+/**
+ * Encuentra a que turno pertenece un movimiento (pago de caja, cobro de
+ * cuenta) por hora, ya que esas tablas no guardan shift_id: un movimiento
+ * cae en el turno que estaba abierto en ese momento.
+ */
+function findShiftByTimestamp(orderedShifts, timestampMs) {
+  return orderedShifts.find((shift) => {
+    const openedAt = Date.parse(shift.openedAt || '');
+    if (!Number.isFinite(openedAt) || timestampMs < openedAt) {
+      return false;
+    }
+
+    const closedAt = shift.closedAt ? Date.parse(shift.closedAt) : Date.now();
+    if (!Number.isFinite(closedAt)) {
+      return false;
+    }
+
+    return timestampMs < closedAt;
+  });
+}
+
+export function buildShiftSummary(dateLabel, rows = [], salesPaymentRows = [], cashPaymentRows = [], customerAccountPaymentRows = []) {
   const defaultShifts = createDefaultShiftSummary(dateLabel);
   const byType = new Map(defaultShifts.map((shift) => [shift.shiftType, shift]));
 
@@ -304,6 +330,7 @@ function buildShiftSummary(dateLabel, rows = [], salesPaymentRows = [], cashPaym
     salesTotal: 0,
     salesCount: 0,
     cashSalesTotal: 0,
+    cashCustomerAccountPaymentsTotal: 0,
     cashPaymentsTotal: 0,
     cashExpectedTotal: 0,
     cashCurrentTotal: 0,
@@ -335,20 +362,7 @@ function buildShiftSummary(dateLabel, rows = [], salesPaymentRows = [], cashPaym
       return;
     }
 
-    const targetShift = orderedShifts.find((shift) => {
-      const openedAt = Date.parse(shift.openedAt || '');
-      if (!Number.isFinite(openedAt) || paymentAt < openedAt) {
-        return false;
-      }
-
-      const closedAt = shift.closedAt ? Date.parse(shift.closedAt) : Date.now();
-      if (!Number.isFinite(closedAt)) {
-        return false;
-      }
-
-      return paymentAt < closedAt;
-    });
-
+    const targetShift = findShiftByTimestamp(orderedShifts, paymentAt);
     if (!targetShift) {
       return;
     }
@@ -356,8 +370,34 @@ function buildShiftSummary(dateLabel, rows = [], salesPaymentRows = [], cashPaym
     targetShift.cashPaymentsTotal = roundMoney(Number(targetShift.cashPaymentsTotal || 0) + amount);
   });
 
+  // Un cobro de cuenta corriente en efectivo es plata real que entra a la
+  // caja del turno en el que se cobro, igual que una venta en efectivo.
+  // Antes no se sumaba aca (solo en el total del dia completo), por eso el
+  // "monto actual" de un turno quedaba mas bajo que el efectivo fisico real.
+  customerAccountPaymentRows.forEach((row) => {
+    const method = String(row.payment_method || '').trim().toLowerCase();
+    if (method !== 'efectivo') {
+      return;
+    }
+
+    const paymentAt = Date.parse(row.created_at || '');
+    const amount = roundMoney(row.amount);
+    if (!Number.isFinite(paymentAt) || amount <= 0) {
+      return;
+    }
+
+    const targetShift = findShiftByTimestamp(orderedShifts, paymentAt);
+    if (!targetShift) {
+      return;
+    }
+
+    targetShift.cashCustomerAccountPaymentsTotal = roundMoney(Number(targetShift.cashCustomerAccountPaymentsTotal || 0) + amount);
+  });
+
   shifts.forEach((shift) => {
-    shift.cashExpectedTotal = roundMoney(Number(shift.openingCash || 0) + Number(shift.cashSalesTotal || 0));
+    shift.cashExpectedTotal = roundMoney(
+      Number(shift.openingCash || 0) + Number(shift.cashSalesTotal || 0) + Number(shift.cashCustomerAccountPaymentsTotal || 0)
+    );
     shift.cashCurrentTotal = roundMoney(Number(shift.cashExpectedTotal || 0) - Number(shift.cashPaymentsTotal || 0));
     shift.cashTotal = shift.cashCurrentTotal;
   });
@@ -917,10 +957,11 @@ export async function getScannerCustomerDetail(rawCustomerId) {
     throw error;
   }
 
-  const [customers, accountSales, accountPayments] = await Promise.all([
+  const [customers, accountSales, accountPayments, allSalesForReconciliation] = await Promise.all([
     listCustomersWithDebt(),
     listCustomerAccountSales(customerId, 20),
-    listCustomerAccountPayments(customerId, 20)
+    listCustomerAccountPayments(customerId, 20),
+    listAllCustomerAccountSalesForReconciliation(customerId)
   ]);
   const saleIds = accountSales.map((sale) => Number(sale.id || 0)).filter((saleId) => saleId > 0);
   const saleItems = await listSaleItemsBySaleIds(saleIds);
@@ -946,6 +987,16 @@ export async function getScannerCustomerDetail(rawCustomerId) {
   });
   const summary = customers.find((item) => Number(item.id || 0) === customerId);
 
+  // Misma reconciliacion FIFO que usa el registro de un pago nuevo: asi la
+  // pantalla de detalle y el ticket impreso nunca pueden mostrar deudas
+  // distintas para las mismas ventas.
+  const settlementBySaleId = new Map(
+    annotateAccountSalesSettlement({
+      salesAsc: allSalesForReconciliation,
+      totalPayments: Number(summary?.account_payments_total || 0)
+    }).map((sale) => [Number(sale.id), Boolean(sale.isSettled)])
+  );
+
   return {
     customer: toCustomerSummary({
       ...customer,
@@ -962,7 +1013,8 @@ export async function getScannerCustomerDetail(rawCustomerId) {
       totalAmount: roundMoney(sale.total_amount),
       itemsCount: Number(sale.items_count || 0),
       items: saleItemsBySaleId.get(Number(sale.id || 0)) || [],
-      createdAt: toCanonicalIsoOrNull(sale.created_at)
+      createdAt: toCanonicalIsoOrNull(sale.created_at),
+      isSettled: settlementBySaleId.get(Number(sale.id || 0)) ?? false
     })),
     accountPayments: accountPayments.map((payment) => ({
       id: Number(payment.id || 0),
@@ -1204,7 +1256,8 @@ export async function getScannerDashboard(rawQuery) {
     customerAccountPaymentRows,
     rankingRows,
     shiftRows,
-    cashPaymentRows
+    cashPaymentRows,
+    customerAccountPaymentCashMatchRows
   ] = await Promise.all([
     sumConfirmedSalesBetween(params.dayStart, params.dayEnd),
     sumConfirmedSalesByPaymentMethodBetween(params.dayStart, params.dayEnd),
@@ -1219,7 +1272,8 @@ export async function getScannerDashboard(rawQuery) {
     listCustomerAccountPaymentMovementsBetween(params.dayStart, params.dayEnd, params.movementLimit),
     listRankingBetween(params.dayStart, params.dayEnd, params.rankingLimit),
     listScannerShiftsByDate(params.dateLabel),
-    listCashPaymentsBetween(params.dayStart, params.dayEnd)
+    listCashPaymentsBetween(params.dayStart, params.dayEnd),
+    listCustomerAccountPaymentsForCashMatchingBetween(params.dayStart, params.dayEnd)
   ]);
 
   const saleIds = saleRows.map((item) => Number(item.id));
@@ -1275,7 +1329,7 @@ export async function getScannerDashboard(rawQuery) {
     comparison,
     movements,
     ranking,
-    ...buildShiftSummary(params.dateLabel, shiftRows, shiftPaymentTotalsRows, cashPaymentRows)
+    ...buildShiftSummary(params.dateLabel, shiftRows, shiftPaymentTotalsRows, cashPaymentRows, customerAccountPaymentCashMatchRows)
   };
 }
 
@@ -1428,12 +1482,13 @@ export async function updateScannerMonthlyWeekOverride(rawPayload) {
 
 export async function getScannerShiftState(rawQuery = {}) {
   const params = normalizeDashboardParams(rawQuery);
-  const [rows, paymentRows, cashPaymentRows] = await Promise.all([
+  const [rows, paymentRows, cashPaymentRows, customerAccountPaymentCashMatchRows] = await Promise.all([
     listScannerShiftsByDate(params.dateLabel),
     listScannerShiftPaymentTotalsByDate(params.dateLabel),
-    listCashPaymentsBetween(params.dayStart, params.dayEnd)
+    listCashPaymentsBetween(params.dayStart, params.dayEnd),
+    listCustomerAccountPaymentsForCashMatchingBetween(params.dayStart, params.dayEnd)
   ]);
-  return buildShiftSummary(params.dateLabel, rows, paymentRows, cashPaymentRows);
+  return buildShiftSummary(params.dateLabel, rows, paymentRows, cashPaymentRows, customerAccountPaymentCashMatchRows);
 }
 
 export async function openScannerShiftForUser(rawPayload, authUser = {}) {

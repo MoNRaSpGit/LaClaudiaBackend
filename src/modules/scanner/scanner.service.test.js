@@ -14,7 +14,74 @@ import {
   closeScannerShift as closeScannerShiftRepo,
   findScannerShiftById
 } from './scanner.repository.js';
-import { closeScannerShiftForUser } from './scanner.service.js';
+import { buildShiftSummary, closeScannerShiftForUser } from './scanner.service.js';
+
+describe('buildShiftSummary - cobros de cuenta en efectivo dentro de la caja del turno', () => {
+  function openShiftRow(overrides = {}) {
+    return {
+      id: 501,
+      business_date: '2026-04-30',
+      shift_type: 'manana',
+      status: 'open',
+      opened_by_user_id: 1,
+      closed_by_user_id: null,
+      opened_at: '2026-04-30 10:00:00',
+      opening_cash: 1000,
+      closed_at: null,
+      sales_total: 0,
+      sales_count: 0,
+      ...overrides
+    };
+  }
+
+  it('suma un cobro de cuenta en efectivo al monto actual del turno en el que se cobro', () => {
+    // Un dia despues de abierto el turno: dentro de la ventana sin importar
+    // el offset de zona horaria local del proceso que corre el test.
+    const summary = buildShiftSummary(
+      '2026-04-30',
+      [openShiftRow()],
+      [],
+      [],
+      [{ payment_method: 'efectivo', amount: 1000, created_at: '2026-05-01 11:00:00' }]
+    );
+
+    const shift = summary.shifts.find((item) => item.shiftType === 'manana');
+    expect(shift.cashCustomerAccountPaymentsTotal).toBe(1000);
+    // openingCash (1000) + cashSalesTotal (0) + cobros de cuenta en efectivo (1000)
+    expect(shift.cashExpectedTotal).toBe(2000);
+    expect(shift.cashCurrentTotal).toBe(2000);
+  });
+
+  it('no cuenta un cobro de cuenta pagado con tarjeta como efectivo en caja', () => {
+    const summary = buildShiftSummary(
+      '2026-04-30',
+      [openShiftRow()],
+      [],
+      [],
+      [{ payment_method: 'tarjeta', amount: 500, created_at: '2026-05-01 11:00:00' }]
+    );
+
+    const shift = summary.shifts.find((item) => item.shiftType === 'manana');
+    expect(shift.cashCustomerAccountPaymentsTotal).toBe(0);
+    expect(shift.cashCurrentTotal).toBe(1000);
+  });
+
+  it('ignora un cobro de cuenta que ocurrio fuera de la ventana del turno (antes de abrirlo)', () => {
+    // Un dia entero antes: evita falsos positivos/negativos por el offset de
+    // zona horaria local del proceso que corre el test.
+    const summary = buildShiftSummary(
+      '2026-04-30',
+      [openShiftRow()],
+      [],
+      [],
+      [{ payment_method: 'efectivo', amount: 1000, created_at: '2026-04-29 09:00:00' }]
+    );
+
+    const shift = summary.shifts.find((item) => item.shiftType === 'manana');
+    expect(shift.cashCustomerAccountPaymentsTotal).toBe(0);
+    expect(shift.cashCurrentTotal).toBe(1000);
+  });
+});
 
 describe('closeScannerShiftForUser', () => {
   beforeEach(() => {

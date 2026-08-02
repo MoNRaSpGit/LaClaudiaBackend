@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   INITIAL_CASH_PRELOAD_OPEN_HOUR,
+  annotateAccountSalesSettlement,
   buildCoveredItemsSnapshot,
   getNextStoreDateLabel,
   getStoreDateLabelForDate,
@@ -14,6 +15,49 @@ import {
   normalizeSalePayload,
   reconcileCustomerAccountPayment
 } from './scanner.model.js';
+
+describe('annotateAccountSalesSettlement', () => {
+  it('marca como saldadas las ventas mas viejas hasta agotar los pagos, y el resto como pendientes', () => {
+    const salesAsc = [
+      { id: 1, total_amount: 1400, created_at: '2026-04-28 10:00:00' },
+      { id: 2, total_amount: 1000, created_at: '2026-04-29 09:00:00' },
+      { id: 3, total_amount: 1000, created_at: '2026-04-30 08:00:00' }
+    ];
+
+    const annotated = annotateAccountSalesSettlement({ salesAsc, totalPayments: 2400 });
+
+    expect(annotated.map((sale) => ({ id: sale.id, isSettled: sale.isSettled }))).toEqual([
+      { id: 1, isSettled: true },
+      { id: 2, isSettled: true },
+      { id: 3, isSettled: false }
+    ]);
+  });
+
+  it('con deuda cero, ninguna venta queda pendiente', () => {
+    const salesAsc = [{ id: 1, total_amount: 500, created_at: '2026-04-28 10:00:00' }];
+    const annotated = annotateAccountSalesSettlement({ salesAsc, totalPayments: 500 });
+
+    expect(annotated[0].isSettled).toBe(true);
+  });
+
+  it('usa el mismo criterio FIFO que reconcileCustomerAccountPayment (consistencia ticket <-> pantalla)', () => {
+    const salesAsc = [
+      { id: 1, total_amount: 1400, created_at: '2026-04-28 10:00:00' },
+      { id: 2, total_amount: 1000, created_at: '2026-04-29 09:00:00' },
+      { id: 3, total_amount: 1000, created_at: '2026-04-30 08:00:00' }
+    ];
+
+    const reconciliation = reconcileCustomerAccountPayment({
+      salesAsc,
+      totalPaymentsBefore: 0,
+      paymentAmount: 2400
+    });
+    const annotated = annotateAccountSalesSettlement({ salesAsc, totalPayments: 2400 });
+
+    const settledIds = annotated.filter((sale) => sale.isSettled).map((sale) => sale.id);
+    expect(settledIds).toEqual(reconciliation.coveredSaleIds);
+  });
+});
 
 describe('reconcileCustomerAccountPayment', () => {
   it('cubre todas las ventas impagas cuando el pago salda la deuda completa', () => {

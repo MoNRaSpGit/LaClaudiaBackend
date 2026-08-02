@@ -1005,6 +1005,28 @@ export async function listCashPaymentsBetween(startDate, endDate) {
   return rows;
 }
 
+/**
+ * Todos los cobros de cuenta corriente del rango (sin limite, con metodo de
+ * pago y fecha). Se usa para sumar los cobros en efectivo al monto de caja
+ * de cada turno - `listCustomerAccountPaymentMovementsBetween` esta pensada
+ * para la lista de movimientos y viene limitada, no sirve para totales.
+ */
+export async function listCustomerAccountPaymentsForCashMatchingBetween(startDate, endDate) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT payment_method, amount, created_at
+      FROM customer_account_payments
+      WHERE status = 'confirmed'
+        AND created_at >= ?
+        AND created_at < ?
+      ORDER BY created_at ASC, id ASC
+    `,
+    [startDate, endDate]
+  );
+  return rows;
+}
+
 export async function listCustomerAccountPaymentMovementsBetween(startDate, endDate, limit) {
   const pool = getDbPoolOrThrow();
   const [rows] = await pool.query(
@@ -1258,6 +1280,29 @@ export async function listCustomerAccountSales(customerId, limit = 20) {
       LIMIT ?
     `,
     [customerId, limit]
+  );
+
+  return rows;
+}
+
+/**
+ * Todo el historial de ventas a cuenta de un cliente (sin limite), mas viejas
+ * primero, solo con las columnas necesarias para reconciliar la deuda. Se usa
+ * para decidir que ventas siguen impagas: si se limitara a las ultimas N (como
+ * la lista de pantalla), un cliente con mucho historial podria reconciliar mal.
+ */
+export async function listAllCustomerAccountSalesForReconciliation(customerId) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT id, total_amount, created_at
+      FROM sales_tickets
+      WHERE customer_id = ?
+        AND status = 'confirmed'
+        AND sale_payment_method = 'cuenta'
+      ORDER BY created_at ASC, id ASC
+    `,
+    [customerId]
   );
 
   return rows;

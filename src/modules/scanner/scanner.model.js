@@ -33,6 +33,29 @@ export function roundMoney2(value) {
 }
 
 /**
+ * Camina el historial de ventas a cuenta (mas viejas primero) contra el total
+ * ya pagado historicamente, y devuelve cuales quedan impagas (FIFO: las mas
+ * viejas se consideran saldadas primero por los pagos ya registrados). Es el
+ * unico lugar donde se decide "que ventas siguen debiendose" - lo usan tanto
+ * el registro de un pago nuevo como la pantalla de detalle del cliente, para
+ * que ticket y pantalla nunca puedan mostrar cosas distintas.
+ */
+function getOutstandingSalesFifo({ salesAsc = [], totalPaymentsBefore = 0 }) {
+  let alreadyPaid = Number(totalPaymentsBefore || 0);
+  const outstandingSales = [];
+  salesAsc.forEach((sale) => {
+    const saleAmount = Number(sale.total_amount ?? sale.totalAmount ?? 0);
+    if (alreadyPaid >= saleAmount - 0.005) {
+      alreadyPaid = roundMoney2(alreadyPaid - saleAmount);
+      return;
+    }
+    outstandingSales.push(sale);
+    alreadyPaid = 0;
+  });
+  return outstandingSales;
+}
+
+/**
  * Dado el historial de ventas a cuenta de un cliente (mas viejas primero) y
  * lo que ya se pago historicamente, calcula la deuda real y valida un pago
  * nuevo contra esa deuda. Pura (sin DB) para poder testearla sin mysql y para
@@ -50,19 +73,7 @@ export function reconcileCustomerAccountPayment({ salesAsc = [], totalPaymentsBe
     throw error;
   }
 
-  // Las ventas mas viejas se consideran saldadas primero (FIFO) por los pagos
-  // ya registrados, para saber cuales siguen impagas.
-  let alreadyPaid = Number(totalPaymentsBefore || 0);
-  const outstandingSales = [];
-  salesAsc.forEach((sale) => {
-    const saleAmount = Number(sale.total_amount ?? sale.totalAmount ?? 0);
-    if (alreadyPaid >= saleAmount - 0.005) {
-      alreadyPaid = roundMoney2(alreadyPaid - saleAmount);
-      return;
-    }
-    outstandingSales.push(sale);
-    alreadyPaid = 0;
-  });
+  const outstandingSales = getOutstandingSalesFifo({ salesAsc, totalPaymentsBefore });
 
   // De las ventas impagas, este pago nuevo cubre las mas viejas primero.
   let remaining = normalizedPaymentAmount;
@@ -82,6 +93,22 @@ export function reconcileCustomerAccountPayment({ salesAsc = [], totalPaymentsBe
     coveredSaleIds: coveredSales.map((sale) => Number(sale.id)),
     debtRemaining: roundMoney2(Math.max(debtTotal - normalizedPaymentAmount, 0))
   };
+}
+
+/**
+ * Marca, para cada venta a cuenta del historial (mas viejas primero), si ya
+ * quedo saldada por los pagos registrados o si todavia esta pendiente. Usa
+ * la misma reconciliacion FIFO que registerCustomerAccountPayment para que
+ * la pantalla de detalle del cliente y el comprobante impreso coincidan
+ * siempre con la deuda real.
+ */
+export function annotateAccountSalesSettlement({ salesAsc = [], totalPayments = 0 }) {
+  const outstandingSales = getOutstandingSalesFifo({ salesAsc, totalPaymentsBefore: totalPayments });
+  const outstandingIds = new Set(outstandingSales.map((sale) => Number(sale.id)));
+  return salesAsc.map((sale) => ({
+    ...sale,
+    isSettled: !outstandingIds.has(Number(sale.id))
+  }));
 }
 
 export function buildCoveredItemsSnapshot(coveredItemRows = []) {
