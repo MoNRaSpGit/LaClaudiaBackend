@@ -543,6 +543,31 @@ export function normalizePaymentPayload(rawPayload) {
   };
 }
 
+export function normalizeCashDepositPayload(rawPayload) {
+  const payload = rawPayload || {};
+  const amount = normalizeMoney(payload.amount);
+  const description = normalizeOptionalString(payload.description);
+
+  if (amount === null) {
+    const error = new Error('Monto de ingreso invalido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!description) {
+    const error = new Error('El motivo del ingreso es obligatorio');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    external_id: normalizeOptionalString(payload.externalId || payload.id),
+    user_id: normalizeOptionalInteger(payload.userId),
+    amount,
+    description
+  };
+}
+
 export function normalizeDashboardParams(rawQuery) {
   const query = rawQuery || {};
   const activeDateLabel = parseDateLabel(query.date) || getStoreTodayDateLabel();

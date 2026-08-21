@@ -290,6 +290,21 @@ async function ensureTables(pool) {
   console.log('[core-schema] tabla cash_payments lista');
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS cash_deposits (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      external_id VARCHAR(64) NULL,
+      user_id BIGINT UNSIGNED NULL,
+      amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+      description VARCHAR(255) NULL,
+      status ENUM('confirmed', 'cancelled') NOT NULL DEFAULT 'confirmed',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+  console.log('[core-schema] tabla cash_deposits lista');
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS customers (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       name VARCHAR(120) NOT NULL,
@@ -498,6 +513,20 @@ async function ensureConstraintsAndIndexes(pool) {
 
   await ensureForeignKey(
     pool,
+    'cash_deposits',
+    'fk_cash_deposits_user_id',
+    `
+      ALTER TABLE cash_deposits
+      ADD CONSTRAINT fk_cash_deposits_user_id
+      FOREIGN KEY (user_id)
+      REFERENCES auth_users(id)
+      ON UPDATE CASCADE
+      ON DELETE SET NULL
+    `
+  );
+
+  await ensureForeignKey(
+    pool,
     'customer_account_payments',
     'fk_customer_account_payments_customer_id',
     `
@@ -619,6 +648,10 @@ async function ensureConstraintsAndIndexes(pool) {
   await ensureIndex(pool, 'cash_payments', 'idx_cash_payments_created_at', 'ALTER TABLE cash_payments ADD INDEX idx_cash_payments_created_at (created_at)');
   await ensureIndex(pool, 'cash_payments', 'idx_cash_payments_user_created', 'ALTER TABLE cash_payments ADD INDEX idx_cash_payments_user_created (user_id, created_at)');
   await ensureIndex(pool, 'cash_payments', 'idx_cash_payments_status_created', 'ALTER TABLE cash_payments ADD INDEX idx_cash_payments_status_created (status, created_at)');
+  await ensureIndex(pool, 'cash_deposits', 'ux_cash_deposits_external_id', 'ALTER TABLE cash_deposits ADD UNIQUE INDEX ux_cash_deposits_external_id (external_id)');
+  await ensureIndex(pool, 'cash_deposits', 'idx_cash_deposits_created_at', 'ALTER TABLE cash_deposits ADD INDEX idx_cash_deposits_created_at (created_at)');
+  await ensureIndex(pool, 'cash_deposits', 'idx_cash_deposits_user_created', 'ALTER TABLE cash_deposits ADD INDEX idx_cash_deposits_user_created (user_id, created_at)');
+  await ensureIndex(pool, 'cash_deposits', 'idx_cash_deposits_status_created', 'ALTER TABLE cash_deposits ADD INDEX idx_cash_deposits_status_created (status, created_at)');
   await ensureIndex(pool, 'customer_account_payments', 'ux_customer_account_payments_external_id', 'ALTER TABLE customer_account_payments ADD UNIQUE INDEX ux_customer_account_payments_external_id (external_id)');
   await ensureIndex(pool, 'customer_account_payments', 'idx_customer_account_payments_customer_status_created', 'ALTER TABLE customer_account_payments ADD INDEX idx_customer_account_payments_customer_status_created (customer_id, status, created_at)');
   await ensureIndex(pool, 'customer_account_payments', 'idx_customer_account_payments_method_created', 'ALTER TABLE customer_account_payments ADD INDEX idx_customer_account_payments_method_created (payment_method, created_at)');

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth, requirePermission } from '../auth/auth.middleware.js';
 import { PERMISSIONS } from '../auth/auth.rbac.js';
 import {
+  scannerCreateCashDepositController,
   scannerCreateDiagnosticEventController,
   scannerCreateCustomerAccountPaymentController,
   scannerCreateCustomerController,
@@ -70,5 +71,6 @@ router.get('/diagnostic-events', requirePermission(PERMISSIONS.SCANNER_DASHBOARD
 router.put('/dashboard/initial-cash', requirePermission(PERMISSIONS.SCANNER_INITIAL_CASH_UPDATE), scannerUpdateDashboardInitialCashController);
 router.put('/dashboard/initial-cash/preload', requirePermission(PERMISSIONS.SCANNER_INITIAL_CASH_UPDATE), scannerUpdateDashboardInitialCashPreloadController);
 router.post('/payments', requirePermission(PERMISSIONS.SCANNER_PAYMENT_CREATE), scannerCreatePaymentController);
+router.post('/cash-deposits', requirePermission(PERMISSIONS.SCANNER_CASH_DEPOSIT_CREATE), scannerCreateCashDepositController);
 
 export default router;

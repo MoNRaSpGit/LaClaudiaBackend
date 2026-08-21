@@ -673,6 +673,36 @@ export async function createCashPayment(paymentPayload) {
   };
 }
 
+export async function createCashDeposit(depositPayload) {
+  const pool = getDbPoolOrThrow();
+  const [result] = await pool.query(
+    `
+      INSERT INTO cash_deposits (
+        external_id,
+        user_id,
+        amount,
+        description,
+        status
+      ) VALUES (?, ?, ?, ?, 'confirmed')
+    `,
+    [
+      depositPayload.external_id,
+      depositPayload.user_id,
+      depositPayload.amount,
+      depositPayload.description
+    ]
+  );
+
+  return {
+    id: Number(result.insertId),
+    external_id: depositPayload.external_id,
+    user_id: depositPayload.user_id,
+    amount: depositPayload.amount,
+    description: depositPayload.description,
+    created_at: new Date().toISOString()
+  };
+}
+
 export async function createCustomerAccountPayment(paymentPayload) {
   const pool = getDbPoolOrThrow();
   const connection = await pool.getConnection();
@@ -1003,6 +1033,66 @@ export async function listCashPaymentsBetween(startDate, endDate) {
     [startDate, endDate]
   );
   return rows;
+}
+
+export async function listCashDepositMovementsBetween(startDate, endDate, limit) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        id,
+        amount,
+        description,
+        created_at
+      FROM cash_deposits
+      WHERE status = 'confirmed'
+        AND created_at >= ?
+        AND created_at < ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `,
+    [startDate, endDate, limit]
+  );
+  return rows;
+}
+
+/**
+ * Todos los ingresos de caja del rango (sin limite), para sumarlos al monto
+ * de caja del turno en el que se cargaron - igual criterio que
+ * listCashPaymentsBetween, no sirve para eso la version limitada de arriba.
+ */
+export async function listCashDepositsBetween(startDate, endDate) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT
+        id,
+        amount,
+        created_at
+      FROM cash_deposits
+      WHERE status = 'confirmed'
+        AND created_at >= ?
+        AND created_at < ?
+      ORDER BY created_at ASC, id ASC
+    `,
+    [startDate, endDate]
+  );
+  return rows;
+}
+
+export async function sumConfirmedCashDepositsBetween(startDate, endDate) {
+  const pool = getDbPoolOrThrow();
+  const [rows] = await pool.query(
+    `
+      SELECT COALESCE(SUM(amount), 0) AS total
+      FROM cash_deposits
+      WHERE status = 'confirmed'
+        AND created_at >= ?
+        AND created_at < ?
+    `,
+    [startDate, endDate]
+  );
+  return Number(rows[0]?.total || 0);
 }
 
 /**

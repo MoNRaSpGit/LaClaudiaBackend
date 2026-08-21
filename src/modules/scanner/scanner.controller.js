@@ -15,6 +15,7 @@ import {
   getScannerProducts,
   getUserStockRequests,
   lookupProductByBarcode,
+  registerScannerCashDeposit,
   registerScannerCustomerAccountPayment,
   registerScannerDiagnosticEvent,
   registerScannerPayment,
@@ -242,6 +243,23 @@ export async function scannerCreatePaymentController(req, res, next) {
         dbElapsedMs,
         appElapsedMs
       }
+    });
+    notifyDashboardChanged().catch(() => {});
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerCreateCashDepositController(req, res, next) {
+  try {
+    const payload = req.body || {};
+    const deposit = await registerScannerCashDeposit({
+      ...payload,
+      userId: req.auth?.user?.id ?? payload.userId
+    });
+    res.status(201).json({
+      ok: true,
+      deposit
     });
     notifyDashboardChanged().catch(() => {});
   } catch (error) {

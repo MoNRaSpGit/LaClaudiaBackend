@@ -83,6 +83,75 @@ describe('buildShiftSummary - cobros de cuenta en efectivo dentro de la caja del
   });
 });
 
+describe('buildShiftSummary - ingresos manuales de caja dentro del turno', () => {
+  function openShiftRow(overrides = {}) {
+    return {
+      id: 501,
+      business_date: '2026-04-30',
+      shift_type: 'manana',
+      status: 'open',
+      opened_by_user_id: 1,
+      closed_by_user_id: null,
+      opened_at: '2026-04-30 10:00:00',
+      opening_cash: 1000,
+      closed_at: null,
+      sales_total: 0,
+      sales_count: 0,
+      ...overrides
+    };
+  }
+
+  it('suma un ingreso manual de caja al monto actual del turno en el que se cargo', () => {
+    const summary = buildShiftSummary(
+      '2026-04-30',
+      [openShiftRow()],
+      [],
+      [],
+      [],
+      [{ amount: 200, created_at: '2026-05-01 11:00:00' }]
+    );
+
+    const shift = summary.shifts.find((item) => item.shiftType === 'manana');
+    expect(shift.cashDepositsTotal).toBe(200);
+    // openingCash (1000) + cashSalesTotal (0) + cobros de cuenta (0) + ingreso (200)
+    expect(shift.cashExpectedTotal).toBe(1200);
+    expect(shift.cashCurrentTotal).toBe(1200);
+  });
+
+  it('ignora un ingreso que ocurrio fuera de la ventana del turno (antes de abrirlo)', () => {
+    const summary = buildShiftSummary(
+      '2026-04-30',
+      [openShiftRow()],
+      [],
+      [],
+      [],
+      [{ amount: 200, created_at: '2026-04-29 09:00:00' }]
+    );
+
+    const shift = summary.shifts.find((item) => item.shiftType === 'manana');
+    expect(shift.cashDepositsTotal).toBe(0);
+    expect(shift.cashCurrentTotal).toBe(1000);
+  });
+
+  it('combina ingreso manual + cobro de cuenta en efectivo en el mismo turno', () => {
+    const summary = buildShiftSummary(
+      '2026-04-30',
+      [openShiftRow()],
+      [],
+      [],
+      [{ payment_method: 'efectivo', amount: 300, created_at: '2026-05-01 10:00:00' }],
+      [{ amount: 200, created_at: '2026-05-01 11:00:00' }]
+    );
+
+    const shift = summary.shifts.find((item) => item.shiftType === 'manana');
+    expect(shift.cashCustomerAccountPaymentsTotal).toBe(300);
+    expect(shift.cashDepositsTotal).toBe(200);
+    // 1000 + 0 + 300 + 200
+    expect(shift.cashExpectedTotal).toBe(1500);
+    expect(shift.cashCurrentTotal).toBe(1500);
+  });
+});
+
 describe('closeScannerShiftForUser', () => {
   beforeEach(() => {
     vi.clearAllMocks();

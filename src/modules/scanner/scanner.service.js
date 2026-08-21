@@ -2,6 +2,7 @@ import {
   createProduct,
   createDashboardInitialCashByDateIfMissing,
   createCashPayment,
+  createCashDeposit,
   getDashboardNextDayPreloadByDate,
   createCustomerAccountPayment,
   createCustomer,
@@ -31,6 +32,8 @@ import {
   listMonthlyWeekOverridesBetween,
   listScannerDiagnosticEvents,
   listCashPaymentsBetween,
+  listCashDepositMovementsBetween,
+  listCashDepositsBetween,
   listScannerShiftPaymentTotalsByDate,
   listScannerShiftsByDate,
   resetScannerShiftsByDate,
@@ -44,6 +47,7 @@ import {
   markStockRequestResolved,
   sumConfirmedCustomerAccountPaymentsBetween,
   sumConfirmedCustomerAccountPaymentsByMethodBetween,
+  sumConfirmedCashDepositsBetween,
   sumConfirmedPaymentsBetween,
   sumConfirmedSalesBetween,
   sumConfirmedSalesByPaymentMethodBetween,
@@ -57,6 +61,7 @@ import {
 import {
   annotateAccountSalesSettlement,
   normalizeBarcode,
+  normalizeCashDepositPayload,
   normalizeCustomerAccountPaymentPayload,
   normalizeCustomerCreatePayload,
   normalizeCustomerId,
@@ -189,6 +194,7 @@ function createDefaultShiftSummary(dateLabel) {
     salesCount: 0,
     cashSalesTotal: 0,
     cashCustomerAccountPaymentsTotal: 0,
+    cashDepositsTotal: 0,
     cashPaymentsTotal: 0,
     cashExpectedTotal: 0,
     cashCurrentTotal: 0,
@@ -265,6 +271,7 @@ function toShiftSummaryItem(row, dateLabel) {
     salesCount: Number(row.sales_count || 0),
     cashSalesTotal: 0,
     cashCustomerAccountPaymentsTotal: 0,
+    cashDepositsTotal: 0,
     cashPaymentsTotal: 0,
     cashExpectedTotal: 0,
     cashCurrentTotal: 0,
@@ -306,7 +313,7 @@ function findShiftByTimestamp(orderedShifts, timestampMs) {
   });
 }
 
-export function buildShiftSummary(dateLabel, rows = [], salesPaymentRows = [], cashPaymentRows = [], customerAccountPaymentRows = []) {
+export function buildShiftSummary(dateLabel, rows = [], salesPaymentRows = [], cashPaymentRows = [], customerAccountPaymentRows = [], cashDepositRows = []) {
   const defaultShifts = createDefaultShiftSummary(dateLabel);
   const byType = new Map(defaultShifts.map((shift) => [shift.shiftType, shift]));
 
@@ -331,6 +338,7 @@ export function buildShiftSummary(dateLabel, rows = [], salesPaymentRows = [], c
     salesCount: 0,
     cashSalesTotal: 0,
     cashCustomerAccountPaymentsTotal: 0,
+    cashDepositsTotal: 0,
     cashPaymentsTotal: 0,
     cashExpectedTotal: 0,
     cashCurrentTotal: 0,
@@ -394,9 +402,31 @@ export function buildShiftSummary(dateLabel, rows = [], salesPaymentRows = [], c
     targetShift.cashCustomerAccountPaymentsTotal = roundMoney(Number(targetShift.cashCustomerAccountPaymentsTotal || 0) + amount);
   });
 
+  // Ingreso manual de efectivo cargado por el admin (ej. cambio traido a
+  // mitad de jornada). Usa toCanonicalIsoUtc (no Date.parse crudo) para no
+  // repetir el problema de zona horaria que ya tienen cashPaymentRows y
+  // customerAccountPaymentRows mas arriba (ver docs/deuda-tecnica.md).
+  cashDepositRows.forEach((row) => {
+    const depositAt = Date.parse(toCanonicalIsoUtc(row.created_at) || '');
+    const amount = roundMoney(row.amount);
+    if (!Number.isFinite(depositAt) || amount <= 0) {
+      return;
+    }
+
+    const targetShift = findShiftByTimestamp(orderedShifts, depositAt);
+    if (!targetShift) {
+      return;
+    }
+
+    targetShift.cashDepositsTotal = roundMoney(Number(targetShift.cashDepositsTotal || 0) + amount);
+  });
+
   shifts.forEach((shift) => {
     shift.cashExpectedTotal = roundMoney(
-      Number(shift.openingCash || 0) + Number(shift.cashSalesTotal || 0) + Number(shift.cashCustomerAccountPaymentsTotal || 0)
+      Number(shift.openingCash || 0)
+      + Number(shift.cashSalesTotal || 0)
+      + Number(shift.cashCustomerAccountPaymentsTotal || 0)
+      + Number(shift.cashDepositsTotal || 0)
     );
     shift.cashCurrentTotal = roundMoney(Number(shift.cashExpectedTotal || 0) - Number(shift.cashPaymentsTotal || 0));
     shift.cashTotal = shift.cashCurrentTotal;
@@ -683,6 +713,19 @@ function buildPaymentMovements(paymentRows) {
     detail: {
       kind: 'payment',
       description: payment.description ? payment.description : 'Pago registrado sin descripcion.'
+    }
+  }));
+}
+
+function buildCashDepositMovements(depositRows) {
+  return depositRows.map((deposit) => ({
+    id: `cash-deposit-${deposit.id}`,
+    type: 'Ingreso caja',
+    amount: roundMoney(deposit.amount),
+    createdAt: toCanonicalIsoUtc(deposit.created_at),
+    detail: {
+      kind: 'cash_deposit',
+      description: deposit.description ? deposit.description : 'Ingreso de caja sin descripcion.'
     }
   }));
 }
@@ -1094,6 +1137,21 @@ export async function registerScannerPayment(rawPayload) {
   }
 }
 
+export async function registerScannerCashDeposit(rawPayload) {
+  const normalized = normalizeCashDepositPayload(rawPayload);
+
+  try {
+    return await createCashDeposit(normalized);
+  } catch (error) {
+    if (error?.code === 'ER_DUP_ENTRY') {
+      const duplicateError = new Error('El ingreso ya fue registrado (externalId duplicado)');
+      duplicateError.statusCode = 409;
+      throw duplicateError;
+    }
+    throw error;
+  }
+}
+
 async function ensureCurrentDayInitialCashMaterialized(dateLabel) {
   await materializeDashboardInitialCashFromPreloadIfNeeded(dateLabel);
 }
@@ -1248,32 +1306,38 @@ export async function getScannerDashboard(rawQuery) {
     paymentsToday,
     customerAccountPaymentsToday,
     customerAccountPaymentsByMethodRows,
+    depositsToday,
     outstandingDebtTotal,
     salesYesterday,
     bestDaySales,
     saleRows,
     paymentRows,
     customerAccountPaymentRows,
+    cashDepositMovementRows,
     rankingRows,
     shiftRows,
     cashPaymentRows,
-    customerAccountPaymentCashMatchRows
+    customerAccountPaymentCashMatchRows,
+    cashDepositRows
   ] = await Promise.all([
     sumConfirmedSalesBetween(params.dayStart, params.dayEnd),
     sumConfirmedSalesByPaymentMethodBetween(params.dayStart, params.dayEnd),
     sumConfirmedPaymentsBetween(params.dayStart, params.dayEnd),
     sumConfirmedCustomerAccountPaymentsBetween(params.dayStart, params.dayEnd),
     sumConfirmedCustomerAccountPaymentsByMethodBetween(params.dayStart, params.dayEnd),
+    sumConfirmedCashDepositsBetween(params.dayStart, params.dayEnd),
     getTotalOutstandingCustomerDebt(),
     sumConfirmedSalesBetween(params.yesterdayStart, params.yesterdayEnd),
     getBestSalesDayTotal(),
     listSalesMovementsBetween(params.dayStart, params.dayEnd, params.movementLimit),
     listPaymentMovementsBetween(params.dayStart, params.dayEnd, params.movementLimit),
     listCustomerAccountPaymentMovementsBetween(params.dayStart, params.dayEnd, params.movementLimit),
+    listCashDepositMovementsBetween(params.dayStart, params.dayEnd, params.movementLimit),
     listRankingBetween(params.dayStart, params.dayEnd, params.rankingLimit),
     listScannerShiftsByDate(params.dateLabel),
     listCashPaymentsBetween(params.dayStart, params.dayEnd),
-    listCustomerAccountPaymentsForCashMatchingBetween(params.dayStart, params.dayEnd)
+    listCustomerAccountPaymentsForCashMatchingBetween(params.dayStart, params.dayEnd),
+    listCashDepositsBetween(params.dayStart, params.dayEnd)
   ]);
 
   const saleIds = saleRows.map((item) => Number(item.id));
@@ -1282,8 +1346,9 @@ export async function getScannerDashboard(rawQuery) {
   const salesMovements = buildSalesMovementsWithDetails(saleRows, saleItems);
   const paymentMovements = buildPaymentMovements(paymentRows);
   const customerAccountPaymentMovements = buildCustomerAccountPaymentMovements(customerAccountPaymentRows);
+  const cashDepositMovements = buildCashDepositMovements(cashDepositMovementRows);
   const movements = dedupeMovementsById(
-    [...salesMovements, ...paymentMovements, ...customerAccountPaymentMovements]
+    [...salesMovements, ...paymentMovements, ...customerAccountPaymentMovements, ...cashDepositMovements]
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   );
   const salesByPaymentMethod = aggregateSalesByPaymentMethod(salesByPaymentMethodRows);
@@ -1293,6 +1358,7 @@ export async function getScannerDashboard(rawQuery) {
     storedInitialCash
     + Number(salesByPaymentMethod.efectivo || 0)
     + Number(customerAccountPaymentsByMethod.efectivo || 0)
+    + Number(depositsToday || 0)
     - Number(paymentsToday || 0)
   );
   const nonCashPendingTotal = roundMoney(
@@ -1309,6 +1375,7 @@ export async function getScannerDashboard(rawQuery) {
     customerAccountPaymentsTotal: roundMoney(customerAccountPaymentsToday),
     customerAccountPaymentsCashTotal: roundMoney(customerAccountPaymentsByMethod.efectivo),
     customerAccountPaymentsCardTotal: roundMoney(customerAccountPaymentsByMethod.tarjeta),
+    cashDepositsTotal: roundMoney(depositsToday),
     nonCashPendingTotal,
     outstandingDebtTotal: roundMoney(outstandingDebtTotal),
     profitRate: params.profitRate
@@ -1329,7 +1396,7 @@ export async function getScannerDashboard(rawQuery) {
     comparison,
     movements,
     ranking,
-    ...buildShiftSummary(params.dateLabel, shiftRows, shiftPaymentTotalsRows, cashPaymentRows, customerAccountPaymentCashMatchRows)
+    ...buildShiftSummary(params.dateLabel, shiftRows, shiftPaymentTotalsRows, cashPaymentRows, customerAccountPaymentCashMatchRows, cashDepositRows)
   };
 }
 
@@ -1482,13 +1549,14 @@ export async function updateScannerMonthlyWeekOverride(rawPayload) {
 
 export async function getScannerShiftState(rawQuery = {}) {
   const params = normalizeDashboardParams(rawQuery);
-  const [rows, paymentRows, cashPaymentRows, customerAccountPaymentCashMatchRows] = await Promise.all([
+  const [rows, paymentRows, cashPaymentRows, customerAccountPaymentCashMatchRows, cashDepositRows] = await Promise.all([
     listScannerShiftsByDate(params.dateLabel),
     listScannerShiftPaymentTotalsByDate(params.dateLabel),
     listCashPaymentsBetween(params.dayStart, params.dayEnd),
-    listCustomerAccountPaymentsForCashMatchingBetween(params.dayStart, params.dayEnd)
+    listCustomerAccountPaymentsForCashMatchingBetween(params.dayStart, params.dayEnd),
+    listCashDepositsBetween(params.dayStart, params.dayEnd)
   ]);
-  return buildShiftSummary(params.dateLabel, rows, paymentRows, cashPaymentRows, customerAccountPaymentCashMatchRows);
+  return buildShiftSummary(params.dateLabel, rows, paymentRows, cashPaymentRows, customerAccountPaymentCashMatchRows, cashDepositRows);
 }
 
 export async function openScannerShiftForUser(rawPayload, authUser = {}) {

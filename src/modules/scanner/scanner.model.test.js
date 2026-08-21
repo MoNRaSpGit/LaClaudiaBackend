@@ -6,6 +6,7 @@ import {
   getNextStoreDateLabel,
   getStoreDateLabelForDate,
   isInitialCashPreloadWindowOpen,
+  normalizeCashDepositPayload,
   normalizeCustomerAccountPaymentPayload,
   normalizeDashboardInitialCashPayload,
   normalizeDashboardParams,
@@ -15,6 +16,33 @@ import {
   normalizeSalePayload,
   reconcileCustomerAccountPayment
 } from './scanner.model.js';
+
+describe('normalizeCashDepositPayload', () => {
+  it('normaliza un ingreso valido', () => {
+    const result = normalizeCashDepositPayload({
+      amount: '200.5',
+      description: '  Cambio traido de casa  ',
+      userId: 3
+    });
+
+    expect(result).toEqual({
+      external_id: null,
+      user_id: 3,
+      amount: 200.5,
+      description: 'Cambio traido de casa'
+    });
+  });
+
+  it('rechaza un monto invalido', () => {
+    expect(() => normalizeCashDepositPayload({ amount: 0, description: 'algo' })).toThrow(/monto/i);
+    expect(() => normalizeCashDepositPayload({ amount: -50, description: 'algo' })).toThrow(/monto/i);
+  });
+
+  it('exige un motivo/descripcion', () => {
+    expect(() => normalizeCashDepositPayload({ amount: 100, description: '' })).toThrow(/motivo/i);
+    expect(() => normalizeCashDepositPayload({ amount: 100 })).toThrow(/motivo/i);
+  });
+});
 
 describe('annotateAccountSalesSettlement', () => {
   it('marca como saldadas las ventas mas viejas hasta agotar los pagos, y el resto como pendientes', () => {
