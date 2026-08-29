@@ -14,7 +14,8 @@ import {
   normalizeProductCreatePayload,
   normalizeProductUpdatePayload,
   normalizeSalePayload,
-  reconcileCustomerAccountPayment
+  reconcileCustomerAccountPayment,
+  selectSalesUpToAmount
 } from './scanner.model.js';
 
 describe('normalizeCashDepositPayload', () => {
@@ -157,6 +158,79 @@ describe('reconcileCustomerAccountPayment', () => {
     expect(result.debtTotal).toBe(1000);
     expect(result.isFullyClosing).toBe(true);
     expect(result.coveredSaleIds).toEqual([2]);
+  });
+
+  it('un cierre completo cubre TODAS las ventas impagas aunque un pago viejo haya dejado una venta a mitad de cubrir (caso real: Lala Cantera, pago 70)', () => {
+    // Reproduce el desajuste encontrado en produccion: un pago historico de
+    // $4753 no alcanzo a cubrir una venta de $1540 completa (dejo $488
+    // sueltos que el modelo no puede aplicar a una venta parcialmente, ya que
+    // no hay forma de "partir" una venta). Esa venta y todas las siguientes
+    // quedan impagas, sumando $7469 - mas que la deuda real ($6981). El pago
+    // que cierra la cuenta debe cobrar $6981 (correcto) y cubrir las 26
+    // ventas completas (el cliente esta cerrando toda su cuenta, no tendria
+    // sentido dejar una "venta suelta" marcada impaga con el ticket
+    // incompleto).
+    const oldSales = [
+      { id: 1, total_amount: 4265, created_at: '2026-01-01 10:00:00' }, // se salda entero con los $4753
+      { id: 2, total_amount: 1540, created_at: '2026-01-02 10:00:00' }, // $488 no le alcanzan, queda impaga entera
+      { id: 3, total_amount: 5929, created_at: '2026-01-03 10:00:00' } // resto de ventas impagas (26 en el caso real, acortado aca)
+    ];
+
+    const result = reconcileCustomerAccountPayment({
+      salesAsc: oldSales,
+      totalPaymentsBefore: 4753,
+      paymentAmount: 6981
+    });
+
+    expect(result.debtTotal).toBe(6981);
+    expect(result.isFullyClosing).toBe(true);
+    // Cubre las DOS ventas impagas completas (2 y 3), aunque sumen 7469 y no
+    // 6981 - el pago cierra la cuenta entera, no puede dejar una venta
+    // "colgada" sin cubrir solo porque el historial viejo no calza perfecto.
+    expect(result.coveredSaleIds).toEqual([2, 3]);
+  });
+
+  it('un pago parcial (no cierra la cuenta) nunca cubre una venta si eso hace que se pase del monto pagado', () => {
+    const salesAsc = [
+      { id: 1, total_amount: 300, created_at: '2026-04-28 10:00:00' },
+      { id: 2, total_amount: 1000, created_at: '2026-04-29 10:00:00' }
+    ];
+
+    const result = reconcileCustomerAccountPayment({
+      salesAsc,
+      totalPaymentsBefore: 0,
+      paymentAmount: 500
+    });
+
+    expect(result.isFullyClosing).toBe(false);
+    // 500 alcanza para la venta 1 (300) pero no para agregar la venta 2
+    // (1000) sin pasarse - se corta antes en vez de marcarla cubierta.
+    expect(result.coveredSaleIds).toEqual([1]);
+  });
+});
+
+describe('selectSalesUpToAmount', () => {
+  it('incluye ventas mientras entren completas en el monto disponible', () => {
+    const salesAsc = [
+      { id: 1, total_amount: 100 },
+      { id: 2, total_amount: 200 },
+      { id: 3, total_amount: 500 }
+    ];
+
+    expect(selectSalesUpToAmount({ salesAsc, targetAmount: 350 }).map((s) => s.id)).toEqual([1, 2]);
+  });
+
+  it('con monto 0 no incluye nada', () => {
+    const salesAsc = [{ id: 1, total_amount: 100 }];
+    expect(selectSalesUpToAmount({ salesAsc, targetAmount: 0 })).toEqual([]);
+  });
+
+  it('incluye todas si el monto alcanza justo para la suma total', () => {
+    const salesAsc = [
+      { id: 1, total_amount: 100 },
+      { id: 2, total_amount: 200 }
+    ];
+    expect(selectSalesUpToAmount({ salesAsc, targetAmount: 300 }).map((s) => s.id)).toEqual([1, 2]);
   });
 });
 

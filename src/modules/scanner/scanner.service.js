@@ -60,6 +60,8 @@ import {
 } from './scanner.repository.js';
 import {
   annotateAccountSalesSettlement,
+  buildCoveredItemsSnapshot,
+  selectSalesUpToAmount,
   normalizeBarcode,
   normalizeCashDepositPayload,
   normalizeCustomerAccountPaymentPayload,
@@ -1002,8 +1004,8 @@ export async function getScannerCustomerDetail(rawCustomerId) {
 
   const [customers, accountSales, accountPayments, allSalesForReconciliation] = await Promise.all([
     listCustomersWithDebt(),
-    listCustomerAccountSales(customerId, 20),
-    listCustomerAccountPayments(customerId, 20),
+    listCustomerAccountSales(customerId),
+    listCustomerAccountPayments(customerId),
     listAllCustomerAccountSalesForReconciliation(customerId)
   ]);
   const saleIds = accountSales.map((sale) => Number(sale.id || 0)).filter((saleId) => saleId > 0);
@@ -1033,11 +1035,27 @@ export async function getScannerCustomerDetail(rawCustomerId) {
   // Misma reconciliacion FIFO que usa el registro de un pago nuevo: asi la
   // pantalla de detalle y el ticket impreso nunca pueden mostrar deudas
   // distintas para las mismas ventas.
+  const annotatedForReconciliation = annotateAccountSalesSettlement({
+    salesAsc: allSalesForReconciliation,
+    totalPayments: Number(summary?.account_payments_total || 0)
+  });
   const settlementBySaleId = new Map(
-    annotateAccountSalesSettlement({
-      salesAsc: allSalesForReconciliation,
-      totalPayments: Number(summary?.account_payments_total || 0)
-    }).map((sale) => [Number(sale.id), Boolean(sale.isSettled)])
+    annotatedForReconciliation.map((sale) => [Number(sale.id), Boolean(sale.isSettled)])
+  );
+
+  // Detalle de productos para el comprobante de "Imprimir" (deuda pendiente,
+  // sin registrar ningun pago). Si en algun punto del historial un pago viejo
+  // no cubrio una venta entera, esa venta queda marcada impaga igual (bien,
+  // arriba en isSettled) pero ACA se corta antes de sumarla si ya no entra
+  // completa dentro de la deuda real - asi el ticket nunca puede mostrar mas
+  // plata en productos de la que el cliente realmente debe.
+  const debtTotalForPrint = roundMoney(summary?.debt_total ?? 0);
+  const printableSales = selectSalesUpToAmount({
+    salesAsc: annotatedForReconciliation.filter((sale) => !sale.isSettled),
+    targetAmount: debtTotalForPrint
+  });
+  const printableDebtItems = buildCoveredItemsSnapshot(
+    printableSales.flatMap((sale) => saleItemsBySaleId.get(Number(sale.id)) || [])
   );
 
   return {
@@ -1066,7 +1084,8 @@ export async function getScannerCustomerDetail(rawCustomerId) {
       amount: roundMoney(payment.amount),
       notes: String(payment.notes || '').trim(),
       createdAt: toCanonicalIsoOrNull(payment.created_at)
-    }))
+    })),
+    printableDebtItems
   };
 }
 

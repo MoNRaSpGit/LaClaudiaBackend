@@ -56,6 +56,30 @@ function getOutstandingSalesFifo({ salesAsc = [], totalPaymentsBefore = 0 }) {
 }
 
 /**
+ * Suma ventas (mas viejas primero) sin pasarse nunca de un tope. Si en algun
+ * punto del historial un pago no cubrio una venta completa, esa venta queda
+ * "trabada" como impaga entera aunque en la practica ya se haya cubierto
+ * parte de ella - no hay forma de partir una venta en el modelo actual. Para
+ * no arriesgar mostrar en un ticket mas plata de la que realmente se debe
+ * (mas vale mostrar de menos que de mas con guita de por medio), esta
+ * funcion corta ANTES de esa venta si ya no entra completa en el monto
+ * disponible, en vez de agregarla igual y pasarse.
+ */
+export function selectSalesUpToAmount({ salesAsc = [], targetAmount = 0 }) {
+  let remaining = roundMoney2(targetAmount);
+  const selected = [];
+  for (const sale of salesAsc) {
+    const saleAmount = Number(sale.total_amount ?? sale.totalAmount ?? 0);
+    if (saleAmount > remaining + 0.005) {
+      break;
+    }
+    selected.push(sale);
+    remaining = roundMoney2(remaining - saleAmount);
+  }
+  return selected;
+}
+
+/**
  * Dado el historial de ventas a cuenta de un cliente (mas viejas primero) y
  * lo que ya se pago historicamente, calcula la deuda real y valida un pago
  * nuevo contra esa deuda. Pura (sin DB) para poder testearla sin mysql y para
@@ -74,22 +98,25 @@ export function reconcileCustomerAccountPayment({ salesAsc = [], totalPaymentsBe
   }
 
   const outstandingSales = getOutstandingSalesFifo({ salesAsc, totalPaymentsBefore });
+  const isFullyClosing = roundMoney2(debtTotal - normalizedPaymentAmount) <= 0.01;
 
-  // De las ventas impagas, este pago nuevo cubre las mas viejas primero.
-  let remaining = normalizedPaymentAmount;
-  const coveredSales = [];
-  for (const sale of outstandingSales) {
-    if (remaining <= 0.005) {
-      break;
-    }
-    coveredSales.push(sale);
-    remaining = roundMoney2(remaining - Number(sale.total_amount ?? sale.totalAmount ?? 0));
-  }
+  // Si el pago cierra toda la cuenta, cubre TODAS las ventas impagas (es
+  // literalmente lo que significa cerrar la cuenta) aunque, por un desajuste
+  // viejo en el historial, la suma de esas ventas no calce centavo a centavo
+  // con el monto cobrado - la plata cobrada (paymentAmount/debtTotal) sigue
+  // siendo la correcta de cualquier manera.
+  // Si en cambio es un pago parcial (hoy no deberia pasar desde la UI, pero
+  // la API lo permite), cubre las mas viejas primero sin pasarse nunca del
+  // monto pagado, para no marcar como "cubierta" una venta que en realidad
+  // no se termino de pagar.
+  const coveredSales = isFullyClosing
+    ? outstandingSales
+    : selectSalesUpToAmount({ salesAsc: outstandingSales, targetAmount: normalizedPaymentAmount });
 
   return {
     debtTotal,
     paymentAmount: normalizedPaymentAmount,
-    isFullyClosing: roundMoney2(debtTotal - normalizedPaymentAmount) <= 0.01,
+    isFullyClosing,
     coveredSaleIds: coveredSales.map((sale) => Number(sale.id)),
     debtRemaining: roundMoney2(Math.max(debtTotal - normalizedPaymentAmount, 0))
   };

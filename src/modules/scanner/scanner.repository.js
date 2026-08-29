@@ -1352,7 +1352,12 @@ export async function listCustomersWithDebt() {
   return rows;
 }
 
-export async function listCustomerAccountSales(customerId, limit = 20) {
+// Sin LIMIT a proposito: el detalle de cuenta corriente (pantalla + ticket de
+// "Imprimir"/"Pagar") necesita ver TODO el historial de ventas a cuenta, no
+// solo las mas recientes. Antes tenia un LIMIT 20 que dejaba afuera ventas
+// viejas todavia impagas en clientes con mucho movimiento, haciendo que el
+// ticket impreso mostrara menos de lo que realmente se debia.
+export async function listCustomerAccountSales(customerId) {
   const pool = getDbPoolOrThrow();
   const [rows] = await pool.query(
     `
@@ -1367,9 +1372,8 @@ export async function listCustomerAccountSales(customerId, limit = 20) {
         AND status = 'confirmed'
         AND sale_payment_method = 'cuenta'
       ORDER BY created_at DESC, id DESC
-      LIMIT ?
     `,
-    [customerId, limit]
+    [customerId]
   );
 
   return rows;
@@ -1398,7 +1402,9 @@ export async function listAllCustomerAccountSalesForReconciliation(customerId) {
   return rows;
 }
 
-export async function listCustomerAccountPayments(customerId, limit = 20) {
+// Sin LIMIT a proposito, mismo criterio que listCustomerAccountSales: el
+// historial de pagos del cliente se muestra completo, no solo los ultimos 20.
+export async function listCustomerAccountPayments(customerId) {
   const pool = getDbPoolOrThrow();
   const [rows] = await pool.query(
     `
@@ -1413,9 +1419,8 @@ export async function listCustomerAccountPayments(customerId, limit = 20) {
       WHERE customer_id = ?
         AND status = 'confirmed'
       ORDER BY created_at DESC, id DESC
-      LIMIT ?
     `,
-    [customerId, limit]
+    [customerId]
   );
 
   return rows;
