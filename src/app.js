@@ -3,6 +3,7 @@ import cors from 'cors';
 import healthRoutes from './modules/health/health.routes.js';
 import scannerRoutes from './modules/scanner/scanner.routes.js';
 import authRoutes from './modules/auth/auth.routes.js';
+import s2pingRoutes from './modules/s2ping/s2ping.routes.js';
 import { env } from './config/env.js';
 
 export function createApp() {
@@ -39,6 +40,7 @@ export function createApp() {
   app.use('/api', healthRoutes);
   app.use('/api', authRoutes);
   app.use('/api/scanner', scannerRoutes);
+  app.use('/api/s2ping', s2pingRoutes);
 
   app.use((error, _req, res, _next) => {
     const explicitStatus = Number(error?.statusCode || error?.status || 0);
