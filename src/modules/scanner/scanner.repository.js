@@ -287,13 +287,27 @@ export async function createSaleTicket(salePayload) {
   try {
     await connection.beginTransaction();
 
+    let customerLoyaltyRow = null;
     if (salePayload.customer_id != null) {
       // Bloquea la fila del cliente para serializar contra un pago de cuenta
       // concurrente y evitar que el ticket de cierre de cuenta se arme con datos viejos.
-      await connection.query(
-        `SELECT id FROM customers WHERE id = ? LIMIT 1 FOR UPDATE`,
+      // El mismo lock sirve para leer el saldo de puntos sin pisarse con otra venta.
+      const [customerRows] = await connection.query(
+        `SELECT id, loyalty_points_balance FROM customers WHERE id = ? LIMIT 1 FOR UPDATE`,
         [salePayload.customer_id]
       );
+      customerLoyaltyRow = customerRows[0] || null;
+    }
+
+    const pointsUsed = Number(salePayload.points_used || 0);
+    if (pointsUsed > 0) {
+      const currentBalance = Number(customerLoyaltyRow?.loyalty_points_balance || 0);
+      if (currentBalance < pointsUsed) {
+        const error = new Error('El cliente no tiene suficientes puntos');
+        error.statusCode = 409;
+        error.code = 'INSUFFICIENT_POINTS';
+        throw error;
+      }
     }
 
     let shiftRow = null;
@@ -321,6 +335,8 @@ export async function createSaleTicket(salePayload) {
       }
     }
 
+    const pointsEarned = Number(salePayload.points_earned || 0);
+
     const [ticketResult] = await connection.query(
       `
       INSERT INTO sales_tickets (
@@ -330,10 +346,12 @@ export async function createSaleTicket(salePayload) {
         shift_id,
         sale_payment_method,
         total_amount,
+        points_used,
+        points_earned,
         items_count,
         status,
         notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed', ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?)
       `,
       [
         salePayload.external_id,
@@ -342,6 +360,8 @@ export async function createSaleTicket(salePayload) {
         salePayload.shift_id || null,
         salePayload.sale_payment_method,
         salePayload.total_amount,
+        pointsUsed,
+        pointsEarned,
         salePayload.items_count,
         salePayload.notes
       ]
@@ -356,6 +376,43 @@ export async function createSaleTicket(salePayload) {
     if (items.length > 0) {
       const insert = buildItemsInsertStatement(items);
       await connection.query(insert.sql, insert.values);
+    }
+
+    if (customerLoyaltyRow && (pointsUsed > 0 || pointsEarned > 0)) {
+      const currentBalance = Number(customerLoyaltyRow.loyalty_points_balance || 0);
+      let runningBalance = currentBalance;
+
+      if (pointsUsed > 0) {
+        runningBalance -= pointsUsed;
+        await connection.query(
+          `
+            INSERT INTO customer_loyalty_movements (customer_id, sale_id, direction, points, balance_after)
+            VALUES (?, ?, 'redeem', ?, ?)
+          `,
+          [salePayload.customer_id, saleId, pointsUsed, runningBalance]
+        );
+      }
+
+      if (pointsEarned > 0) {
+        runningBalance += pointsEarned;
+        await connection.query(
+          `
+            INSERT INTO customer_loyalty_movements (customer_id, sale_id, direction, points, balance_after)
+            VALUES (?, ?, 'earn', ?, ?)
+          `,
+          [salePayload.customer_id, saleId, pointsEarned, runningBalance]
+        );
+      }
+
+      await connection.query(
+        `
+          UPDATE customers
+          SET loyalty_points_balance = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+          LIMIT 1
+        `,
+        [runningBalance, salePayload.customer_id]
+      );
     }
 
     if (shiftRow) {
@@ -386,6 +443,11 @@ export async function createSaleTicket(salePayload) {
       shift_id: salePayload.shift_id || null,
       sale_payment_method: salePayload.sale_payment_method,
       total_amount: salePayload.total_amount,
+      points_used: pointsUsed,
+      points_earned: pointsEarned,
+      loyalty_points_balance: customerLoyaltyRow
+        ? Number(customerLoyaltyRow.loyalty_points_balance || 0) - pointsUsed + pointsEarned
+        : null,
       items_count: salePayload.items_count,
       created_at: new Date().toISOString()
     };
@@ -440,6 +502,7 @@ export async function listScannerShiftPaymentTotalsByDate(dateLabel) {
         s.id AS shift_id,
         st.sale_payment_method,
         SUM(st.total_amount) AS total_amount,
+        SUM(st.points_used) AS points_used,
         COUNT(*) AS tickets_count
       FROM scanner_shifts s
       LEFT JOIN sales_tickets st
@@ -456,6 +519,7 @@ export async function listScannerShiftPaymentTotalsByDate(dateLabel) {
     shift_id: Number(row.shift_id || 0),
     sale_payment_method: String(row.sale_payment_method || '').trim(),
     total_amount: Number(row.total_amount || 0),
+    points_used: Number(row.points_used || 0),
     tickets_count: Number(row.tickets_count || 0)
   }));
 }
@@ -1275,6 +1339,7 @@ export async function findCustomerById(customerId) {
         phone,
         notes,
         is_active,
+        loyalty_points_balance,
         created_at,
         updated_at
       FROM customers
@@ -1313,6 +1378,7 @@ export async function listCustomersWithDebt() {
         c.phone,
         c.notes,
         c.is_active,
+        c.loyalty_points_balance,
         c.created_at,
         c.updated_at,
         GREATEST(COALESCE(sales.total_sales, 0) - COALESCE(payments.total_payments, 0), 0) AS debt_total,
@@ -1325,7 +1391,7 @@ export async function listCustomersWithDebt() {
       LEFT JOIN (
         SELECT
           customer_id,
-          SUM(total_amount) AS total_sales,
+          SUM(total_amount - points_used) AS total_sales,
           COUNT(*) AS account_sales_count,
           MAX(created_at) AS last_account_sale_at
         FROM sales_tickets
@@ -1357,6 +1423,10 @@ export async function listCustomersWithDebt() {
 // solo las mas recientes. Antes tenia un LIMIT 20 que dejaba afuera ventas
 // viejas todavia impagas en clientes con mucho movimiento, haciendo que el
 // ticket impreso mostrara menos de lo que realmente se debia.
+// total_amount sale neteado de lo ya cubierto con puntos (total_amount -
+// points_used): es lo que esta venta realmente le agrego a la deuda, no el
+// valor bruto de los productos. points_used_on_sale queda aparte para poder
+// mostrar "usaste $X de puntos" sin tocar el monto que consume la FIFO.
 export async function listCustomerAccountSales(customerId) {
   const pool = getDbPoolOrThrow();
   const [rows] = await pool.query(
@@ -1364,7 +1434,8 @@ export async function listCustomerAccountSales(customerId) {
       SELECT
         id,
         external_id,
-        total_amount,
+        (total_amount - points_used) AS total_amount,
+        points_used AS points_used_on_sale,
         items_count,
         created_at
       FROM sales_tickets
@@ -1389,7 +1460,7 @@ export async function listAllCustomerAccountSalesForReconciliation(customerId) {
   const pool = getDbPoolOrThrow();
   const [rows] = await pool.query(
     `
-      SELECT id, total_amount, created_at
+      SELECT id, (total_amount - points_used) AS total_amount, created_at
       FROM sales_tickets
       WHERE customer_id = ?
         AND status = 'confirmed'

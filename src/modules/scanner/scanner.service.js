@@ -204,7 +204,8 @@ function createDefaultShiftSummary(dateLabel) {
     paymentSummary: {
       efectivo: 0,
       tarjeta: 0,
-      credito: 0
+      credito: 0,
+      puntos: 0
     },
     openedAt: null,
     closedAt: null,
@@ -217,7 +218,8 @@ function createEmptyShiftPaymentSummary() {
   return {
     efectivo: 0,
     tarjeta: 0,
-    credito: 0
+    credito: 0,
+    puntos: 0
   };
 }
 
@@ -248,7 +250,13 @@ function applyShiftPaymentTotals(shifts = [], paymentRows = []) {
     }
 
     shift.paymentSummary = shift.paymentSummary || createEmptyShiftPaymentSummary();
-    shift.paymentSummary[method] = roundMoney(Number(shift.paymentSummary[method] || 0) + Number(row.total_amount || 0));
+    // La plata real que entro por este medio es el total menos lo que ya
+    // cubrieron los puntos: esos puntos se contabilizan aparte, no como
+    // efectivo/tarjeta/credito que nunca entraron.
+    const pointsUsed = Number(row.points_used || 0);
+    const moneyCollected = Math.max(0, Number(row.total_amount || 0) - pointsUsed);
+    shift.paymentSummary[method] = roundMoney(Number(shift.paymentSummary[method] || 0) + moneyCollected);
+    shift.paymentSummary.puntos = roundMoney(Number(shift.paymentSummary.puntos || 0) + pointsUsed);
   });
 
   return shifts;
@@ -663,6 +671,7 @@ function toCustomerSummary(row) {
     phone: String(row.phone || '').trim() || '',
     notes: String(row.notes || '').trim() || '',
     isActive: Boolean(Number(row.is_active || 0)),
+    loyaltyPointsBalance: Number(row.loyalty_points_balance || 0),
     debtTotal: roundMoney(row.debt_total),
     accountSalesCount: Number(row.account_sales_count || 0),
     accountPaymentsTotal: roundMoney(row.account_payments_total),

@@ -443,6 +443,9 @@ export function normalizeSalePayload(rawPayload) {
 
   const totalAmount = Number(items.reduce((acc, item) => acc + item.line_total, 0).toFixed(2));
   const salePaymentMethod = normalizeSalePaymentMethod(payload.paymentMethod);
+  // El cliente ahora se puede identificar en cualquier medio de pago (para
+  // puntos de fidelidad), no solo en cuenta corriente - en cuenta sigue
+  // siendo obligatorio porque ahi tambien define quien queda debiendo.
   const customerId = normalizeOptionalInteger(payload.customerId);
 
   if (salePaymentMethod === 'cuenta' && customerId === null) {
@@ -451,14 +454,37 @@ export function normalizeSalePayload(rawPayload) {
     throw error;
   }
 
+  const pointsToUse = normalizeIntegerRange(payload.pointsToUse, 0, 0, Number.MAX_SAFE_INTEGER);
+
+  if (pointsToUse > 0 && customerId === null) {
+    const error = new Error('customerId requerido para pagar con puntos');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (pointsToUse > totalAmount) {
+    const error = new Error('No se pueden usar mas puntos que el total de la venta');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Los puntos nuevos se calculan sobre lo que realmente se paga en plata
+  // (total menos lo cubierto con puntos viejos), no sobre el total bruto -
+  // asi no se "autogeneran" puntos sobre el tramo que ya se pago con puntos.
+  // 100 pesos pagados = 1 punto, redondeo normal (0.5 para arriba).
+  const netAmountPaid = Number((totalAmount - pointsToUse).toFixed(2));
+  const pointsEarned = customerId !== null ? Math.round(netAmountPaid / 100) : 0;
+
   return {
     external_id: normalizeOptionalString(payload.externalId || payload.id),
     user_id: normalizeOptionalInteger(payload.userId),
     sale_payment_method: salePaymentMethod,
-    customer_id: salePaymentMethod === 'cuenta' ? customerId : null,
+    customer_id: customerId,
     notes: normalizeOptionalString(payload.notes),
     items_count: items.reduce((acc, item) => acc + item.quantity, 0),
     total_amount: totalAmount,
+    points_used: pointsToUse,
+    points_earned: pointsEarned,
     items
   };
 }

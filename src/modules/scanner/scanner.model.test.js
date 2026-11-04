@@ -412,6 +412,72 @@ describe('normalizeSalePayload', () => {
       items: [{ nombre: 'Yerba', precio_venta: 100, quantity: 1 }]
     })).toThrow('customerId requerido para ventas en cuenta');
   });
+
+  it('allows customerId on efectivo/tarjeta sales (no solo en cuenta)', () => {
+    const result = normalizeSalePayload({
+      paymentMethod: 'efectivo',
+      customerId: 7,
+      items: [{ nombre: 'Yerba', precio_venta: 100, quantity: 1 }]
+    });
+
+    expect(result.customer_id).toBe(7);
+  });
+
+  it('gana puntos redondeando total/100 cuando hay cliente identificado', () => {
+    const roundsUp = normalizeSalePayload({
+      paymentMethod: 'efectivo',
+      customerId: 7,
+      items: [{ nombre: 'Yerba', precio_venta: 1360, quantity: 1 }]
+    });
+    const roundsDown = normalizeSalePayload({
+      paymentMethod: 'efectivo',
+      customerId: 7,
+      items: [{ nombre: 'Yerba', precio_venta: 1340, quantity: 1 }]
+    });
+
+    expect(roundsUp.points_earned).toBe(14);
+    expect(roundsDown.points_earned).toBe(13);
+  });
+
+  it('no gana puntos en una venta anonima (sin customerId)', () => {
+    const result = normalizeSalePayload({
+      paymentMethod: 'efectivo',
+      items: [{ nombre: 'Yerba', precio_venta: 1000, quantity: 1 }]
+    });
+
+    expect(result.customer_id).toBeNull();
+    expect(result.points_earned).toBe(0);
+  });
+
+  it('calcula puntos ganados sobre el neto, no sobre el total bruto, cuando se usan puntos', () => {
+    const result = normalizeSalePayload({
+      paymentMethod: 'efectivo',
+      customerId: 7,
+      pointsToUse: 400,
+      items: [{ nombre: 'Yerba', precio_venta: 500, quantity: 1 }]
+    });
+
+    expect(result.points_used).toBe(400);
+    // Paga 500 - 400 en puntos = 100 en plata -> 1 punto nuevo, no 5.
+    expect(result.points_earned).toBe(1);
+  });
+
+  it('requires customerId para pagar con puntos', () => {
+    expect(() => normalizeSalePayload({
+      paymentMethod: 'efectivo',
+      pointsToUse: 50,
+      items: [{ nombre: 'Yerba', precio_venta: 100, quantity: 1 }]
+    })).toThrow('customerId requerido para pagar con puntos');
+  });
+
+  it('rejects pointsToUse mayor al total de la venta', () => {
+    expect(() => normalizeSalePayload({
+      paymentMethod: 'efectivo',
+      customerId: 7,
+      pointsToUse: 200,
+      items: [{ nombre: 'Yerba', precio_venta: 100, quantity: 1 }]
+    })).toThrow('No se pueden usar mas puntos que el total de la venta');
+  });
 });
 
 describe('initial cash preload window helpers', () => {

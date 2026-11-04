@@ -184,6 +184,43 @@ async function ensureCustomerAccountPaymentCoveredItemsColumn(pool) {
   );
 }
 
+async function ensureCustomerLoyaltyPointsBalanceColumn(pool) {
+  await ensureColumn(
+    pool,
+    'customers',
+    'loyalty_points_balance',
+    `
+      ALTER TABLE customers
+      ADD COLUMN loyalty_points_balance INT NOT NULL DEFAULT 0
+      AFTER notes
+    `
+  );
+}
+
+async function ensureSalesTicketLoyaltyColumns(pool) {
+  await ensureColumn(
+    pool,
+    'sales_tickets',
+    'points_used',
+    `
+      ALTER TABLE sales_tickets
+      ADD COLUMN points_used INT UNSIGNED NOT NULL DEFAULT 0
+      AFTER total_amount
+    `
+  );
+
+  await ensureColumn(
+    pool,
+    'sales_tickets',
+    'points_earned',
+    `
+      ALTER TABLE sales_tickets
+      ADD COLUMN points_earned INT UNSIGNED NOT NULL DEFAULT 0
+      AFTER points_used
+    `
+  );
+}
+
 async function ensureTables(pool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS auth_users (
@@ -336,6 +373,20 @@ async function ensureTables(pool) {
   console.log('[core-schema] tabla customer_account_payments lista');
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS customer_loyalty_movements (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      customer_id BIGINT UNSIGNED NOT NULL,
+      sale_id BIGINT UNSIGNED NULL,
+      direction ENUM('earn', 'redeem') NOT NULL,
+      points INT UNSIGNED NOT NULL DEFAULT 0,
+      balance_after INT NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+  console.log('[core-schema] tabla customer_loyalty_movements lista');
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS scanner_dashboard_daily (
       business_date DATE NOT NULL,
       initial_cash DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -426,6 +477,8 @@ async function ensureConstraintsAndIndexes(pool) {
   await ensureSalesTicketShiftColumn(pool);
   await ensureScannerShiftOpeningCashColumn(pool);
   await ensureCustomerAccountPaymentCoveredItemsColumn(pool);
+  await ensureCustomerLoyaltyPointsBalanceColumn(pool);
+  await ensureSalesTicketLoyaltyColumns(pool);
 
   await ensureForeignKey(
     pool,
@@ -555,6 +608,34 @@ async function ensureConstraintsAndIndexes(pool) {
 
   await ensureForeignKey(
     pool,
+    'customer_loyalty_movements',
+    'fk_customer_loyalty_movements_customer_id',
+    `
+      ALTER TABLE customer_loyalty_movements
+      ADD CONSTRAINT fk_customer_loyalty_movements_customer_id
+      FOREIGN KEY (customer_id)
+      REFERENCES customers(id)
+      ON UPDATE CASCADE
+      ON DELETE RESTRICT
+    `
+  );
+
+  await ensureForeignKey(
+    pool,
+    'customer_loyalty_movements',
+    'fk_customer_loyalty_movements_sale_id',
+    `
+      ALTER TABLE customer_loyalty_movements
+      ADD CONSTRAINT fk_customer_loyalty_movements_sale_id
+      FOREIGN KEY (sale_id)
+      REFERENCES sales_tickets(id)
+      ON UPDATE CASCADE
+      ON DELETE SET NULL
+    `
+  );
+
+  await ensureForeignKey(
+    pool,
     'scanner_diagnostic_events',
     'fk_scanner_diagnostic_events_user_id',
     `
@@ -656,6 +737,9 @@ async function ensureConstraintsAndIndexes(pool) {
   await ensureIndex(pool, 'customer_account_payments', 'idx_customer_account_payments_customer_status_created', 'ALTER TABLE customer_account_payments ADD INDEX idx_customer_account_payments_customer_status_created (customer_id, status, created_at)');
   await ensureIndex(pool, 'customer_account_payments', 'idx_customer_account_payments_method_created', 'ALTER TABLE customer_account_payments ADD INDEX idx_customer_account_payments_method_created (payment_method, created_at)');
   await ensureIndex(pool, 'customer_account_payments', 'idx_customer_account_payments_user_created', 'ALTER TABLE customer_account_payments ADD INDEX idx_customer_account_payments_user_created (user_id, created_at)');
+  await ensureIndex(pool, 'customer_loyalty_movements', 'idx_customer_loyalty_movements_customer_created', 'ALTER TABLE customer_loyalty_movements ADD INDEX idx_customer_loyalty_movements_customer_created (customer_id, created_at)');
+  await ensureIndex(pool, 'customer_loyalty_movements', 'idx_customer_loyalty_movements_sale_id', 'ALTER TABLE customer_loyalty_movements ADD INDEX idx_customer_loyalty_movements_sale_id (sale_id)');
+  await ensureIndex(pool, 'sales_tickets', 'idx_sales_tickets_points_used', 'ALTER TABLE sales_tickets ADD INDEX idx_sales_tickets_points_used (points_used)');
   await ensureIndex(pool, 'scanner_dashboard_daily', 'idx_scanner_dashboard_daily_updated_at', 'ALTER TABLE scanner_dashboard_daily ADD INDEX idx_scanner_dashboard_daily_updated_at (updated_at)');
   await ensureIndex(pool, 'scanner_dashboard_next_day_preloads', 'idx_scanner_dashboard_next_day_preloads_updated_at', 'ALTER TABLE scanner_dashboard_next_day_preloads ADD INDEX idx_scanner_dashboard_next_day_preloads_updated_at (updated_at)');
   await ensureIndex(pool, 'scanner_monthly_week_overrides', 'idx_scanner_monthly_week_overrides_updated_at', 'ALTER TABLE scanner_monthly_week_overrides ADD INDEX idx_scanner_monthly_week_overrides_updated_at (updated_at)');
