@@ -7,6 +7,7 @@ import {
   createCustomerAccountPayment,
   createCustomer,
   deactivateCustomerById,
+  updateCustomerAllowsAccountSales,
   createScannerDiagnosticEvent,
   createSaleTicket,
   closeScannerShift,
@@ -66,6 +67,7 @@ import {
   normalizeCashDepositPayload,
   normalizeCustomerAccountPaymentPayload,
   normalizeCustomerCreatePayload,
+  normalizeAllowsAccountSalesPayload,
   normalizeCustomerId,
   normalizeDashboardParams,
   normalizeDashboardInitialCashPayload,
@@ -669,9 +671,11 @@ function toCustomerSummary(row) {
     id: Number(row.id || 0),
     name: String(row.name || '').trim(),
     phone: String(row.phone || '').trim() || '',
+    cedula: String(row.cedula || '').trim() || '',
     notes: String(row.notes || '').trim() || '',
     isActive: Boolean(Number(row.is_active || 0)),
     loyaltyPointsBalance: Number(row.loyalty_points_balance || 0),
+    allowsAccountSales: Boolean(Number(row.allows_account_sales || 0)),
     debtTotal: roundMoney(row.debt_total),
     accountSalesCount: Number(row.account_sales_count || 0),
     accountPaymentsTotal: roundMoney(row.account_payments_total),
@@ -970,6 +974,12 @@ export async function registerScannerSale(rawPayload) {
       error.statusCode = 400;
       throw error;
     }
+
+    if (normalized.sale_payment_method === 'cuenta' && !Number(customer.allows_account_sales || 0)) {
+      const error = new Error('Este cliente no tiene habilitada la cuenta corriente');
+      error.statusCode = 400;
+      throw error;
+    }
   }
 
   try {
@@ -986,7 +996,17 @@ export async function registerScannerSale(rawPayload) {
 
 export async function createScannerCustomer(rawPayload) {
   const normalized = normalizeCustomerCreatePayload(rawPayload);
-  const customerId = await createCustomer(normalized);
+  let customerId;
+  try {
+    customerId = await createCustomer(normalized);
+  } catch (error) {
+    if (error?.code === 'ER_DUP_ENTRY') {
+      const duplicateError = new Error('Ya existe un cliente con esa cedula');
+      duplicateError.statusCode = 409;
+      throw duplicateError;
+    }
+    throw error;
+  }
   const customer = await findCustomerById(customerId);
 
   return toCustomerSummary({
@@ -1118,6 +1138,27 @@ export async function deleteScannerCustomer(rawCustomerId) {
 
   await deactivateCustomerById(customerId);
   return { id: customerId };
+}
+
+export async function updateScannerCustomerAllowsAccountSales(rawCustomerId, rawPayload) {
+  const customerId = normalizeCustomerId(rawCustomerId);
+  const normalized = normalizeAllowsAccountSalesPayload(rawPayload);
+  const customer = await findCustomerById(customerId);
+  if (!customer || !Number(customer.is_active || 0)) {
+    const error = new Error('Cliente no encontrado');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  await updateCustomerAllowsAccountSales(customerId, normalized.allows_account_sales);
+  const updated = await findCustomerById(customerId);
+
+  return toCustomerSummary({
+    ...updated,
+    debt_total: 0,
+    account_sales_count: 0,
+    last_account_sale_at: null
+  });
 }
 
 export async function registerScannerCustomerAccountPayment(rawPayload) {

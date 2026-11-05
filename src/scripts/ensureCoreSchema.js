@@ -197,6 +197,40 @@ async function ensureCustomerLoyaltyPointsBalanceColumn(pool) {
   );
 }
 
+// DEFAULT 1 a proposito: a los clientes que ya existen hoy (todos venian
+// operando como clientes de cuenta corriente) este ALTER los deja habilitados
+// sin tocar nada. Los clientes nuevos de ahora en mas arrancan deshabilitados
+// a proposito - el alta explicita manda 0 salvo que se tilde lo contrario.
+async function ensureCustomerAllowsAccountSalesColumn(pool) {
+  await ensureColumn(
+    pool,
+    'customers',
+    'allows_account_sales',
+    `
+      ALTER TABLE customers
+      ADD COLUMN allows_account_sales TINYINT(1) NOT NULL DEFAULT 1
+      AFTER loyalty_points_balance
+    `
+  );
+}
+
+// Nullable a proposito: los clientes que ya existen hoy no tienen cedula
+// cargada. El alta de clientes nuevos la exige desde la capa de validacion
+// (normalizeCustomerCreatePayload), no desde una restriccion NOT NULL aca -
+// asi no hace falta backfillear nada para los clientes viejos.
+async function ensureCustomerCedulaColumn(pool) {
+  await ensureColumn(
+    pool,
+    'customers',
+    'cedula',
+    `
+      ALTER TABLE customers
+      ADD COLUMN cedula VARCHAR(20) NULL
+      AFTER phone
+    `
+  );
+}
+
 async function ensureSalesTicketLoyaltyColumns(pool) {
   await ensureColumn(
     pool,
@@ -478,6 +512,8 @@ async function ensureConstraintsAndIndexes(pool) {
   await ensureScannerShiftOpeningCashColumn(pool);
   await ensureCustomerAccountPaymentCoveredItemsColumn(pool);
   await ensureCustomerLoyaltyPointsBalanceColumn(pool);
+  await ensureCustomerAllowsAccountSalesColumn(pool);
+  await ensureCustomerCedulaColumn(pool);
   await ensureSalesTicketLoyaltyColumns(pool);
 
   await ensureForeignKey(
@@ -718,6 +754,7 @@ async function ensureConstraintsAndIndexes(pool) {
   await ensureIndex(pool, 'sales_tickets', 'idx_sales_tickets_status_created', 'ALTER TABLE sales_tickets ADD INDEX idx_sales_tickets_status_created (status, created_at)');
   await ensureIndex(pool, 'sales_tickets', 'idx_sales_tickets_payment_method_created', 'ALTER TABLE sales_tickets ADD INDEX idx_sales_tickets_payment_method_created (sale_payment_method, created_at)');
   await ensureIndex(pool, 'customers', 'idx_customers_name_active', 'ALTER TABLE customers ADD INDEX idx_customers_name_active (name, is_active)');
+  await ensureIndex(pool, 'customers', 'ux_customers_cedula', 'ALTER TABLE customers ADD UNIQUE INDEX ux_customers_cedula (cedula)');
   await ensureIndex(pool, 'scanner_shifts', 'idx_scanner_shifts_business_date_status', 'ALTER TABLE scanner_shifts ADD INDEX idx_scanner_shifts_business_date_status (business_date, status, shift_type)');
   await ensureIndex(pool, 'scanner_shifts', 'idx_scanner_shifts_opened_at', 'ALTER TABLE scanner_shifts ADD INDEX idx_scanner_shifts_opened_at (opened_at)');
 

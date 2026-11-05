@@ -522,6 +522,7 @@ export function normalizeCustomerCreatePayload(rawPayload) {
   const payload = rawPayload || {};
   const name = String(payload.name || payload.nombre || '').trim().slice(0, 120);
   const phone = String(payload.phone || payload.telefono || '').trim().slice(0, 40);
+  const cedula = String(payload.cedula || '').trim().slice(0, 20);
   const notes = String(payload.notes || payload.notas || '').trim().slice(0, 255);
 
   if (!name) {
@@ -530,11 +531,30 @@ export function normalizeCustomerCreatePayload(rawPayload) {
     throw error;
   }
 
+  if (!cedula) {
+    const error = new Error('cedula requerida');
+    error.statusCode = 400;
+    throw error;
+  }
+
   return {
     name,
     phone: phone || null,
-    notes: notes || null
+    cedula,
+    notes: notes || null,
+    allows_account_sales: Boolean(payload.allowsAccountSales)
   };
+}
+
+export function normalizeAllowsAccountSalesPayload(rawPayload) {
+  const payload = rawPayload || {};
+  if (typeof payload.allowsAccountSales !== 'boolean') {
+    const error = new Error('allowsAccountSales requerido (boolean)');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return { allows_account_sales: payload.allowsAccountSales };
 }
 
 export function normalizeCustomerId(rawCustomerId) {

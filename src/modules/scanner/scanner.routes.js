@@ -7,6 +7,7 @@ import {
   scannerCreateCustomerAccountPaymentController,
   scannerCreateCustomerController,
   scannerDeleteCustomerController,
+  scannerUpdateCustomerAllowsAccountSalesController,
   scannerCreateProductController,
   scannerCreatePaymentController,
   scannerCreateSaleController,
@@ -45,6 +46,7 @@ router.get('/customers', requirePermission(PERMISSIONS.CUSTOMER_READ), scannerLi
 router.get('/customers/:id', requirePermission(PERMISSIONS.CUSTOMER_READ), scannerCustomerDetailController);
 router.post('/customers', requirePermission(PERMISSIONS.CUSTOMER_CREATE), scannerCreateCustomerController);
 router.delete('/customers/:id', requirePermission(PERMISSIONS.CUSTOMER_DELETE), scannerDeleteCustomerController);
+router.patch('/customers/:id/account-flag', requirePermission(PERMISSIONS.CUSTOMER_ACCOUNT_FLAG_UPDATE), scannerUpdateCustomerAllowsAccountSalesController);
 router.post('/customers/:id/payments', requirePermission(PERMISSIONS.CUSTOMER_PAYMENT_CREATE), scannerCreateCustomerAccountPaymentController);
 router.post('/products', requirePermission(PERMISSIONS.SCANNER_PRODUCT_CREATE), scannerCreateProductController);
 router.put('/products/:id', requirePermission(PERMISSIONS.SCANNER_PRODUCT_UPDATE), scannerUpdateProductController);

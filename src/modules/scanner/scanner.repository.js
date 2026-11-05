@@ -1319,14 +1319,31 @@ export async function createCustomer(payload) {
       INSERT INTO customers (
         name,
         phone,
+        cedula,
         notes,
+        allows_account_sales,
         is_active
-      ) VALUES (?, ?, ?, 1)
+      ) VALUES (?, ?, ?, ?, ?, 1)
     `,
-    [payload.name, payload.phone, payload.notes]
+    [payload.name, payload.phone, payload.cedula, payload.notes, payload.allows_account_sales ? 1 : 0]
   );
 
   return Number(result?.insertId || 0);
+}
+
+export async function updateCustomerAllowsAccountSales(customerId, allowsAccountSales) {
+  const pool = getDbPoolOrThrow();
+  const [result] = await pool.query(
+    `
+      UPDATE customers
+      SET allows_account_sales = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [allowsAccountSales ? 1 : 0, customerId]
+  );
+
+  return Number(result?.affectedRows || 0) > 0;
 }
 
 export async function findCustomerById(customerId) {
@@ -1337,9 +1354,11 @@ export async function findCustomerById(customerId) {
         id,
         name,
         phone,
+        cedula,
         notes,
         is_active,
         loyalty_points_balance,
+        allows_account_sales,
         created_at,
         updated_at
       FROM customers
@@ -1376,9 +1395,11 @@ export async function listCustomersWithDebt() {
         c.id,
         c.name,
         c.phone,
+        c.cedula,
         c.notes,
         c.is_active,
         c.loyalty_points_balance,
+        c.allows_account_sales,
         c.created_at,
         c.updated_at,
         GREATEST(COALESCE(sales.total_sales, 0) - COALESCE(payments.total_payments, 0), 0) AS debt_total,

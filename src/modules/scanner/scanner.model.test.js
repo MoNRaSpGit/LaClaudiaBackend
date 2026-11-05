@@ -501,14 +501,35 @@ describe('customer payloads', () => {
     expect(normalizeCustomerCreatePayload({
       name: 'Juan Perez',
       phone: '099123123',
+      cedula: '1234567-8',
       notes: 'Compra en cuenta'
     })).toEqual({
       name: 'Juan Perez',
       phone: '099123123',
-      notes: 'Compra en cuenta'
+      cedula: '1234567-8',
+      notes: 'Compra en cuenta',
+      allows_account_sales: false
     });
 
+    expect(normalizeCustomerCreatePayload({
+      name: 'Maria Dias',
+      cedula: '7654321-0',
+      allowsAccountSales: true
+    }).allows_account_sales).toBe(true);
+
+    expect(() => normalizeCustomerCreatePayload({
+      name: 'Sin Cedula'
+    })).toThrow('cedula requerida');
+
     expect(normalizeCustomerId('7')).toBe(7);
+  });
+
+  it('valida el payload de habilitar/deshabilitar cuenta corriente', async () => {
+    const { normalizeAllowsAccountSalesPayload } = await import('./scanner.model.js');
+
+    expect(normalizeAllowsAccountSalesPayload({ allowsAccountSales: true })).toEqual({ allows_account_sales: true });
+    expect(normalizeAllowsAccountSalesPayload({ allowsAccountSales: false })).toEqual({ allows_account_sales: false });
+    expect(() => normalizeAllowsAccountSalesPayload({})).toThrow('allowsAccountSales requerido (boolean)');
   });
 
   it('normalizes customer account payments', () => {
