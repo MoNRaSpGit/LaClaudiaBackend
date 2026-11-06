@@ -546,6 +546,25 @@ export function normalizeCustomerCreatePayload(rawPayload) {
   };
 }
 
+export function normalizeCustomerNamePayload(rawPayload) {
+  const payload = rawPayload || {};
+  const name = String(payload.name || '').trim();
+
+  if (!name) {
+    const error = new Error('Ingresa un nombre valido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (name.length > 120) {
+    const error = new Error('El nombre no puede superar 120 caracteres');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return { name };
+}
+
 export function normalizeAllowsAccountSalesPayload(rawPayload) {
   const payload = rawPayload || {};
   if (typeof payload.allowsAccountSales !== 'boolean') {

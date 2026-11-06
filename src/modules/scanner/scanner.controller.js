@@ -2,6 +2,7 @@ import {
   createScannerCustomer,
   deleteScannerCustomer,
   updateScannerCustomerAllowsAccountSales,
+  updateScannerCustomerName,
   createScannerProduct,
   createUserStockRequest,
   getScannerCustomerDetail,
@@ -195,6 +196,18 @@ export async function scannerCustomerDetailController(req, res, next) {
 export async function scannerDeleteCustomerController(req, res, next) {
   try {
     const customer = await deleteScannerCustomer(req.params.id);
+    res.json({
+      ok: true,
+      customer
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function scannerUpdateCustomerNameController(req, res, next) {
+  try {
+    const customer = await updateScannerCustomerName(req.params.id, req.body || {});
     res.json({
       ok: true,
       customer

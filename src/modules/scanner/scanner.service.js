@@ -8,6 +8,7 @@ import {
   createCustomer,
   deactivateCustomerById,
   updateCustomerAllowsAccountSales,
+  updateCustomerName,
   createScannerDiagnosticEvent,
   createSaleTicket,
   closeScannerShift,
@@ -68,6 +69,7 @@ import {
   normalizeCustomerAccountPaymentPayload,
   normalizeCustomerCreatePayload,
   normalizeAllowsAccountSalesPayload,
+  normalizeCustomerNamePayload,
   normalizeCustomerId,
   normalizeDashboardParams,
   normalizeDashboardInitialCashPayload,
@@ -1138,6 +1140,27 @@ export async function deleteScannerCustomer(rawCustomerId) {
 
   await deactivateCustomerById(customerId);
   return { id: customerId };
+}
+
+export async function updateScannerCustomerName(rawCustomerId, rawPayload) {
+  const customerId = normalizeCustomerId(rawCustomerId);
+  const normalized = normalizeCustomerNamePayload(rawPayload);
+  const customer = await findCustomerById(customerId);
+  if (!customer || !Number(customer.is_active || 0)) {
+    const error = new Error('Cliente no encontrado');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  await updateCustomerName(customerId, normalized.name);
+  const updated = await findCustomerById(customerId);
+
+  return toCustomerSummary({
+    ...updated,
+    debt_total: 0,
+    account_sales_count: 0,
+    last_account_sale_at: null
+  });
 }
 
 export async function updateScannerCustomerAllowsAccountSales(rawCustomerId, rawPayload) {

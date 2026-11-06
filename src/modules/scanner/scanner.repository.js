@@ -1346,6 +1346,21 @@ export async function updateCustomerAllowsAccountSales(customerId, allowsAccount
   return Number(result?.affectedRows || 0) > 0;
 }
 
+export async function updateCustomerName(customerId, name) {
+  const pool = getDbPoolOrThrow();
+  const [result] = await pool.query(
+    `
+      UPDATE customers
+      SET name = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [name, customerId]
+  );
+
+  return Number(result?.affectedRows || 0) > 0;
+}
+
 export async function findCustomerById(customerId) {
   const pool = getDbPoolOrThrow();
   const [rows] = await pool.query(

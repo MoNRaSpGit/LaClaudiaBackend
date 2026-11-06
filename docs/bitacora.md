@@ -353,3 +353,19 @@ Estamos en etapa de consolidar logica de caja y ventas en frontend, para luego b
 - La actualizacion reemplaza los items dentro de una transaccion para evitar estados parciales.
 - Validacion:
   - `npm test -- --run`: OK.
+
+## Puntos de fidelidad + separacion cuenta corriente / cedula
+
+- Fecha: `2026-11-05`
+- Detalle completo: `docs/daily/2026-11-05-puntos-fidelidad-y-cuenta-corriente.md`.
+- Sistema de puntos: ganar (`$100` reales = `1` punto, redondeo estandar) y
+  canjear (`1` punto = `$1`), combinable con otro medio de pago, calculado
+  solo sobre lo pagado de verdad. Commit `eccf747`.
+- Cuenta corriente y puntos pasan a ser flags independientes del cliente
+  (`customers.allows_account_sales`, clientes existentes grandfathered en
+  `true`, togglable en cualquier momento solo por `admin`) + `cedula`
+  obligatoria y unica al alta (nullable en DB para no backfillear clientes
+  viejos). Commit `0defbdd`.
+- Rollback seguro: `9463be5` (antes de puntos), `eccf747` (antes de
+  separar cuenta/puntos + cedula).
+- 63 tests backend OK (`npm test -- --run`).

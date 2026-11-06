@@ -532,6 +532,15 @@ describe('customer payloads', () => {
     expect(() => normalizeAllowsAccountSalesPayload({})).toThrow('allowsAccountSales requerido (boolean)');
   });
 
+  it('valida el payload de editar nombre de cliente', async () => {
+    const { normalizeCustomerNamePayload } = await import('./scanner.model.js');
+
+    expect(normalizeCustomerNamePayload({ name: '  Juan Perez  ' })).toEqual({ name: 'Juan Perez' });
+    expect(() => normalizeCustomerNamePayload({ name: '' })).toThrow('Ingresa un nombre valido');
+    expect(() => normalizeCustomerNamePayload({})).toThrow('Ingresa un nombre valido');
+    expect(() => normalizeCustomerNamePayload({ name: 'a'.repeat(121) })).toThrow('El nombre no puede superar 120 caracteres');
+  });
+
   it('normalizes customer account payments', () => {
     expect(normalizeCustomerAccountPaymentPayload({
       externalId: 'cap-1',
